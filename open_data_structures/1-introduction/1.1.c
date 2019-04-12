@@ -30,6 +30,20 @@ int number_two() {
 	return 0;
 }
 
+int number_three() {
+	char s[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
+
+	for (int i=0; i< sizeof(s)/sizeof(s[0])-1; i++) {
+		int cur = i;
+		if ((s[i] == ' ') && (i >= 42)) {
+			cur = i - 42;
+		}
+		printf("%c", s[cur]);
+	}
+	printf("\n");
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
-	number_two();
+	number_three();
 }
