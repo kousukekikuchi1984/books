@@ -1,0 +1,137 @@
+  #=== Program 7.1（カルマンフィルタのプログラム：例7.3を対象に）====
+  # 3次ARモデルの推定
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  # データの入力
+  data <- read.table("times2.txt")
+  # データ数 N を求め，データを y に渡す ----------------------------
+  N <- nrow(data); y <- data[,1]
+  # カルマンフィルタの関数 ------------------------------------------
+  KF1 <- function(y, XF0, VF0, F, G, Q, R, limy, ISW, OSW, m, q, N)
+    {
+     if (OSW == 1)
+       {
+        XPS <- matrix(0, m, N); XFS <- matrix(0, m, N)
+        VPS <- array(dim = c(m, m, N)); VFS <- array(dim = c(m, m, N))
+       }
+     XF <- XF0; VF <- VF0; NSUM <- 0; SIG2 <- 0; LDET <- 0
+     for (n in 1:N)
+       {
+        # 1期先予測
+        XP <- F %*% XF
+        VP <- F %*% VF %*% t(F) +  G %*% Q %*% t(G)
+        # フィルタ
+        if (y[n] < limy) 
+          {
+           H <- matrix(0, 1, m)
+           for (i in 1:q)
+             {
+              n0 <- n - i
+              if (n0 > 0)
+                {
+                 if (y[n0] < limy)
+                   {
+                    H[1,i] <- y[n0]
+                   }
+                }
+             }
+           NSUM <- NSUM + 1
+           B <- H %*% VP %*% t(H) + R
+           B1 <- solve(B)
+           K <- VP %*% t(H) %*% B1
+           e <- y[n] - H %*% XP
+           XF <- XP + K %*% e
+           VF <- VP - K %*% H %*% VP
+           SIG2 <- SIG2 + t(e) %*% B1 %*% e
+           LDET <- LDET + log(det(B))
+          }
+        else
+          {
+           XF <- XP; VF <- VP
+          }
+        if (OSW == 1)
+          {
+           XPS[,n] <- XP; XFS[,n] <- XF
+           VPS[,,n] <- VP; VFS[,,n] <- VF
+          }   
+       }
+     SIG2 <- SIG2 / NSUM
+     if (ISW == 0)
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi * SIG2) + 1) + LDET)
+       }
+     else
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi) + SIG2) + LDET)
+       }
+     if (OSW == 0)
+       {
+        return(list(LLF=FF, Ovar=SIG2))
+       }
+     if (OSW == 1)
+       {
+        return(list(XPS=XPS, XFS=XFS, VPS=VPS, VFS=VFS, Ovar=SIG2))
+       }
+    }
+  # カルマンフィルタのための行列とパラメータの設定-------------------
+  limy <- 1e20      # 欠測値の下限
+  ISW <- 0; k <- 3; R <- diag(1)
+  H <- matrix(0, 1, k); F <- diag(k)
+  G <- matrix(0, k, k); Q <- matrix(0, k, k)
+  XF0 <- numeric(k); VF0 <- 10000 * diag(k)
+  # カルマンフィルタの実行（最大対数尤度の計算）---------------------
+  OSW <- 0
+  KFL <- KF1(y, XF0, VF0, F, G, Q, R, limy, ISW, OSW, k, k, N)
+  MLL <- KFL$LLF; SIG2 <- KFL$Ovar
+  # カルマンフィルタの実行（状態のフィルタ分布の計算）---------------
+  OSW <- 1
+  KFE <- KF1(y, XF0, VF0, F, G, Q, R, limy, ISW, OSW, k, k, N)
+  XFS <- KFE$XFS; VFS <- KFE$VFS
+  # AICの計算と主要な結果の出力--------------------------------------
+  AIC <- -2 * MLL + 2
+  print(SIG2)
+  print(MLL)
+  print(AIC)
+  print(XFS[1,N])
+  print(XFS[2,N])
+  print(XFS[3,N])
+  # フィルタの平均と2倍標準偏差範囲を折れ線グラフで表示----
+  x <- numeric(N)
+  x1 <- numeric(N)
+  x2 <- numeric(N)
+  t <- c(1:N)
+  # alpha_1関連の折れ線グラフの作成
+  for (n in 1:N)
+    {
+     x[n] <- XFS[1,n]
+     x1[n] <- x[n] - 2 * sqrt(SIG2 * VFS[1,1,n])
+     x2[n] <- x[n] + 2 * sqrt(SIG2 * VFS[1,1,n])
+    }
+  plot(t, x, xlim=range(t), ylim=c(-1.5,2.0), type="l", 
+       xlab="time", ylab="", lwd=2)
+  lines(t, x1, lwd=1)
+  lines(t, x2, lwd=1)
+  # alpha_2関連の折れ線グラフの作成
+  for (n in 1:N)
+    {
+     x[n] <- XFS[2,n]
+     x1[n] <- x[n] - 2 * sqrt(SIG2 * VFS[2,2,n])
+     x2[n] <- x[n] + 2 * sqrt(SIG2 * VFS[2,2,n])
+    }
+  #
+  lines(t, x, lwd=2)
+  lines(t, x1, lwd=1)
+  lines(t, x2, lwd=1)
+  # alpha_3関連の折れ線グラフの作成
+  for (n in 1:N)
+    {
+     x[n] <- XFS[3,n]
+     x1[n] <- x[n] - 2 * sqrt(SIG2 * VFS[3,3,n])
+     x2[n] <- x[n] + 2 * sqrt(SIG2 * VFS[3,3,n])
+    }
+  #
+  lines(t, x, lwd=2)
+  lines(t, x1, lwd=1)
+  lines(t, x2, lwd=1)
+ #===================================================================
+

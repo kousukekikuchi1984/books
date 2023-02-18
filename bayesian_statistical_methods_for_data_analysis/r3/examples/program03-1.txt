@@ -1,0 +1,65 @@
+  #===== Program 3.1（Box-Cox変換を用いた線形回帰モデルの推定）======
+  # データファイルが C ドライブのフォルダ RW にあるとき
+  setwd("C:/RW")
+  # 北海道稲作データの入力
+  Data1 <- read.table("INE.txt", header=T)
+  # 札幌気温データの入力
+  Data2 <- read.table("KION.txt", header=T)
+  # データ数を求める
+  N <- nrow(Data1)
+  # y と X の設定
+  y <- Data1[,1]/Data1[,2]; X <- matrix(1,N,13)
+  for (i in 1:N)
+    {
+     for (j in 1:10)  {X[i,j] <- Data2[i+1,j]}
+     for (j in 11:12) {X[i,j] <- Data2[i,j]}
+    }
+  M <- 13
+  
+  # Box-Cox変換における lambda のマイナス対数尤度を計算する関数 -----
+  LogL <- function(theta, y, X, N) 
+    {
+     lambda <- theta; B <- t(X) %*% X
+     {
+      if (lambda == 0)  {ty <- log(y)}
+      else  {ty <- (y^lambda - 1) / lambda}
+     }
+     c <- t(X) %*% ty
+     beta <- solve(B, c)     # 正規方程式を解く
+     e <- ty - X %*% beta; SIG2 <- crossprod(e,e) / N
+     {
+      if (lambda == 0)
+        {LL <- -N * (log(2*pi*SIG2)+1)/2 - sum(log(y))}
+      else
+        {LL <- -N * (log(2*pi*SIG2)+1)/2 + (lambda-1) * sum(log(y))}
+     }
+     return(LL) 
+    }
+  # lambda に関する関数 LogL の最大化 -------------------------------
+  LLF <- optimize(LogL, lower=-1, upper=1, maximum=TRUE, y=y, X=X, N=N)
+  lambda <- LLF$maximum
+  LL <- LLF$objective
+  # 回帰式のパラメータ推定 ------------------------------------------
+  B <- t(X) %*% X
+  {
+   if (lambda == 0)  {ty <- log(y)}
+   else  {ty <- (y^lambda - 1) / lambda}
+   c <- t(X) %*% ty
+    beta <- solve(B, c)       # 正規方程式を解く
+   e <- ty - X %*% beta; SIG2 <- crossprod(e,e) / N
+  }
+  # 原データと変換後のデータに関するモデルのAICの計算 ---------------
+  AIC <- -2*LL + 2*(M+2)
+  # 主要結果の出力 --------------------------------------------------
+  print("Lambda ="); print(lambda)
+  print("Beta ="); print(beta)
+  print("Sigma2 ="); print(SIG2)
+  print("Max-Likelihood ="); print(LL)
+  print("AIC ="); print(AIC)
+  # 気温効果の折れ線グラフ ------------------------------------------
+  b <- numeric(12)
+  for (i in 1:12)
+    {b[i] <- beta[i]}
+  matplot(b, type="l", xlab="time (month)", 
+          ylab="effects of temperature")
+  #==================================================================

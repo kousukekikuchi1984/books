@@ -1,0 +1,492 @@
+  #=====Program 11（時変係数VARモデル） =======================================
+  # 14:21 2010/03/01
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  data <- read.table("e-IIP.txt")
+  # データ数 N を求める
+  ND <- nrow(data); ell <- ncol(data)
+  # オプションの設定-----------------------------------------------------------
+  k <- 1; MJ <- 6; NF <- 30; Mn <- 20
+  IT <- 3; N <- trunc(ND/IT); NO <- ND - IT*N
+  if (NO > 0)
+    { 
+     N <- N + 1
+    }
+  y <- matrix(0,N,3)
+  for (J in 1:3)
+    {
+     NN <- 0
+     for (i in 1:(N-1))
+       {
+        c <- 0
+        for (j in 1:IT)
+          {
+           NN <- NN + 1; c <- c + data[NN,J]
+          }
+        y[i,J] <- c/IT
+       }
+     c <- 0
+     for (j in 1:(ND-(N-1)*IT))
+       {
+        NN <- NN + 1; c <- c + data[NN,J]
+       }
+     y[N,J] <- c/(ND-(N-1)*IT)
+    }
+  # 行列の設定 ----------------------------------------------------------------
+  FGset1 <- function(ell, q, k, NO)
+    {
+     L <- ell*q+NO-1
+     if (k == 1)
+       {
+        m <- L; F <- diag(m); G <- diag(m)
+       }
+     if (k == 2)
+       {
+        m <- 2*L; F1 <- cbind(2*diag(L),-diag(L))
+        F2 <- cbind(diag(L),0*diag(L))
+        F <- rbind(F1,F2); G <- rbind(diag(L),0*diag(L))
+       } 
+     return(list(m=m, MatF=F, MatG=G))
+    }
+  # VAR係数から相互共分散関数を計算する ---------------------------------------
+  CCVAR <- function(COE, SIGMA, ell, q, Mn)
+    {
+     N <- ell*(2*q + 1)*ell; N1 <- ell*(q + 1)
+     N2 <- ell*(2*q + 1); N3 <- ell*q; M <- max(q,Mn) + 1
+     CV <- array(dim = c(ell, ell, M))
+     c <- matrix(0,N1,ell); b <- matrix(0,N2,ell)
+     B <- matrix(0,N,N); c[1:ell,1:ell] <- SIGMA
+     if (q > 1)
+       {
+        MR <- numeric(N); MC <- numeric(N)
+        MN <- numeric(N); MF <- numeric(N); NO <- 0
+        for (J in 1:ell)
+          {
+           for (n in 1:(2*q+1))
+             {
+              n1 <- n - q - 1
+              for (I in 1:ell)
+                {
+                 NO <- NO + 1; MR[NO] <- I
+                 MC[NO] <- J; MN[NO] <- n1
+                }
+             }
+          }
+        A1 <- matrix(0,N1,N2); B1 <- matrix(0,N1,N2)
+        D <- matrix(0,ell,N3); b1 <- numeric(N)
+        for (II in 1:q)
+          {
+           D[1:ell,(ell*(II-1)+1):(ell*II)] <- COE[,,(q-II+1)]
+          }
+        for (II in 1:(q+1))
+          {
+           A1[(ell*(II-1)+1):(ell*II),(ell*(II-1)+1):(ell*(II-1)+N3)] <- D
+          }
+        B1[1:N1,(N3+1):N2] <- diag(N1); B1 <- B1 - A1
+        for (II in 1:ell)
+          {
+           B[(N1*(II-1)+1):(N1*II),(N2*(II-1)+1):(N2*II)] <- B1
+           b1[(N1*(II-1)+1):(N1*II)] <- c[,II]
+          }
+        for (n in 1:(q*ell^2))
+          {
+           n2 <- 0; n1 <- N1*ell + n
+           for (II in 1:N)
+             {
+              if ((MF[II] == 0) && (MN[II] < 0))
+                {
+                 if (n2 == 0)
+                   {
+                    B[n1,II] <- 1; MF[II] <- 1; n2 <- n2 + 1
+                    for (JJ in 1:N)
+                      {
+                       if ((MN[JJ] == -MN[II]) && (n2 < 2))
+                         {
+                          if ((MR[JJ] == MC[II]) && (MC[JJ] == MR[II]))
+                            {
+                             B[n1,JJ] <- -1; MF[JJ] <- 1; n2 <- n2 + 1
+                            }
+                         }
+                      }
+                   }
+                }
+             }
+          }
+        x <- solve(B,b1)
+        for (II in 1:ell)
+          {
+           b[,II] <- x[(N2*(II-1)+1):(N2*II)]
+          }
+        for (II in 1:(q+1))
+          {
+           CV[,,II] <- b[(ell*(q+II-1)+1):(ell*(q+II)),1:ell]
+          }
+       }
+     else
+       {
+        B[1:ell,1:ell] <- diag(ell); B[(ell+1):(2*ell),(ell+1):(2*ell)] <- diag(ell)
+        B[1:ell,(ell+1):(2*ell)] <- - COE[,,1]; B[(ell+1):(2*ell),1:ell] <- - COE[,,1]
+        B1 <- solve(B); b <- B1 %*% c
+        CV[,,1] <- b[1:ell,1:ell]; CV[,,2] <- b[(ell+1):(2*ell),1:ell]
+       }
+     if (Mn > q)
+       {
+        for (J in 1:(Mn-q))
+          {
+           a <- matrix(0, ell, ell)
+           for (II in 1:q)
+             {
+              a <- a + COE[,,II] %*% CV[,,J-II+q+1]
+             }
+           CV[,,J+q+1] <- a
+          }
+       }
+     return(CV)
+    }
+  # 離散フーリエ変換（Goertzel法）---------------------------------------------
+  FOURIE <- function(x, N, NF)
+    {
+     FC <- numeric(NF); FS <- numeric(NF); W <- pi/(NF-1)
+     for (i in 1:NF)
+       {
+        CI <- cos((i-1)*W); SI <- sin((i-1)*W); T1 <- 0; T2 <- 0
+        for (j in 2:N)
+          {
+           jj <- N - j + 2; T0 <- 2*CI*T1 - T2 + x[jj]
+           T2 <- T1; T1 <- T0
+          }
+        FC[i] <- CI*T1 - T2 + x[1]; FS[i] <- SI*T1
+       }
+     return(list(FC=FC, FS=FS))
+    }
+  # 時変AR係数と誤差項の共分散行列 --------------------------------------------
+  COEest <- function(arc, SSIG2, ell, q)
+    {
+     A <- array(dim = c(ell, ell, q)); V <- diag(SSIG2)
+     B <- array(dim = c(ell, ell, q)); B0 <- matrix(0,ell,ell)
+     for (I in 1:ell)
+       {
+        n1 <- 0
+        for (II in 1:q)
+          {
+           for (J in 1:ell)
+             {
+              n1 <- n1 + 1; B[I,J,II] <- arc[I,n1]
+             }
+          }
+        if (I > 1)
+          {
+           for (J in 1:(I-1))
+             {
+              L <- ell*q + J; B0[I,J] <- arc[I,L]
+             }
+          }
+       }
+     D <- diag(ell) - B0; D1 <- solve(D)
+     for (II in 1:q)
+       {
+        A[,,II] <- D1 %*% B[,,II]
+       }
+     SIGMA <- D1 %*% V %*% t(D1)
+     return(list(A=A, SIGMA=SIGMA))
+    }
+  # クロススペクトル，コーヒレンシーとノイズ寄与率の計算 ----------------------
+  CSPest <- function(A, SIGMA, ell, q, NF)
+    {
+     CSP <- array(dim = c(ell, ell, NF)); CHR <- array(dim = c(ell, ell, NF))
+     RNC <- array(dim = c(ell, ell, NF)); ZA <- array(dim = c(ell, ell, NF))
+     C <- numeric(20)
+     for (I in 1:ell)
+       {
+        for (J in 1:ell)
+          {
+           C[1] <- 0
+           if (I == J)
+             {
+              C[1] <- 1
+             }
+           for (II in 1:q)
+             {
+              C[II+1] <- - A[I,J,II]
+             }
+           Fal <- FOURIE(C, q+1, NF); FR <- Fal$FC; FI <- Fal$FS
+           ZA[I,J,] <- complex(real=FR, imaginary=FI)
+          }
+       }
+     for (II in 1:NF)
+       {
+        ZB <- ZA[,,II]; ZB1 <- solve(ZB)
+        CSP[,,II] <- ZB1 %*% SIGMA %*% t(Conj(ZB1))
+        for (I in 2:ell)
+          {
+           for (J in 1:(I-1))
+             {
+              CHR[I,J,II] <- Mod(CSP[I,J,II])^2/(Re(CSP[I,I,II])*Re(CSP[J,J,II]))
+              CHR[J,I,II] <- CHR[I,J,II]
+             }
+          }
+        for (I in 1:ell)
+          {
+           for (J in 1:ell)
+             {
+              RNC[I,J,II] <- Mod(ZB1[I,J])^2*SIGMA[J,J]/Re(CSP[I,I,II])
+             }
+          }
+       }
+     return(list(CSP=CSP, CHR=CHR, RNC=RNC))
+    }
+  # カルマンフィルタの関数 ----------------------------------------------------
+  KF2 <- function(y, XF0, VF0, F, G, Q, R, ISW, OSW, m, ell, q, NO, N)
+    {
+     if (OSW == 1)
+       {
+        XPS <- matrix(0, m, N); XFS <- matrix(0, m, N)
+        VPS <- array(dim = c(m, m, N)); VFS <- array(dim = c(m, m, N))
+       }
+     XF <- XF0; VF <- VF0; NSUM <- 0; SIG2 <- 0; LDET <- 0
+     for (n in 1:N)
+       {
+        # 1期先予測
+        XP <- F %*% XF
+        VP <- F %*% VF %*% t(F) +  G %*% Q %*% t(G)
+        # フィルタ
+        H <- matrix(0, 1, m)
+        n1 <- 0
+        for (i in 1:q)
+          {
+           n0 <- n - i
+           if (n0 > 0)
+             {
+              n1 <- n1 + 1; n2 <- ell*(n1-1) + 1
+              n3 <- ell*n1; H[1,n2:n3] <- y[n0,]
+             }
+          }
+        if (NO > 1)
+          {
+           for (i in 1:(NO-1))
+             {
+              n2 <- n1*ell + i; H[1,n2] <- y[n,i]
+             }
+          }
+        NSUM <- NSUM + 1
+        B <- H %*% VP %*% t(H) + R
+        B1 <- solve(B)
+        K <- VP %*% t(H) %*% B1
+        e <- y[n,NO] - H %*% XP
+        XF <- XP + K %*% e
+        VF <- VP - K %*% H %*% VP
+        SIG2 <- SIG2 + t(e) %*% B1 %*% e
+        LDET <- LDET + log(det(B))
+        if (OSW == 1)
+          {
+           XPS[,n] <- XP; XFS[,n] <- XF
+           VPS[,,n] <- VP; VFS[,,n] <- VF
+          }   
+       }
+     SIG2 <- SIG2 / NSUM
+     if (ISW == 0)
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi * SIG2) + 1) + LDET)
+       }
+     else
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi) + SIG2) + LDET)
+       }
+     if (OSW == 0)
+       {
+        return(list(LLF=FF, Ovar=SIG2))
+       }
+     if (OSW == 1)
+       {
+        return(list(XPS=XPS, XFS=XFS, VPS=VPS, VFS=VFS, Ovar=SIG2))
+       }
+    }
+  # 平滑化の関数 --------------------------------------------------------------
+  SMO1 <- function(XPS, XFS, VPS, VFS, F, GSIG2, m, q, N)
+    {
+     XSS <- matrix(0, m, N); VSS <- array(dim = c(m, m, N))
+     XS1 <- XFS[,N]; VS1 <- VFS[,,N]
+     XSS[,N] <- XS1; VSS[,,N] <- VS1
+     for (n1 in 1:(N-1))
+       {
+        n <- N - n1; XP <- XPS[,n+1]; XF <- XFS[,n]
+        VP <- VPS[,,n+1]; VF <- VFS[,,n]; VPI <- solve(VP)
+        A <- VF %*% t(F) %*% VPI
+        XS2 <- XF + A %*% (XS1 - XP)
+        VS2 <- VF + A %*% (VS1 - VP) %*% t(A)
+        XS1 <- XS2; VS1 <- VS2
+        XSS[,n] <- XS1; VSS[,,n] <- VS1
+       }
+    arc <- matrix(0, q, N); arv <- array(dim = c(q, q, N))
+    for (n in 1:N)
+      {
+       arc[,n] <- XSS[1:q,n]; arv[,,n] <- GSIG2 * VSS[1:q,1:q,n]
+      }
+    return(list(arc=arc, arv=arv))
+   }
+  # TAU2の対数尤度関数の定義 --------------------------------------------------
+  LogL <- function(theta, y, ell, q, k, NO, N)  
+    {
+     TAU2 <- theta
+     MAT <- FGset1(ell, q, k, NO)
+     m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG
+     OSW <- 0; ISW <- 0; L <- ell*q+NO-1
+     Q <- TAU2*diag(L); R <- diag(1)
+     XF0 <- numeric(m); VF0 <- 150 * diag(m)
+     LL <- KF2(y, XF0, VF0, F, G, Q, R, ISW, OSW, m, ell, q, NO, N)
+     LL0 <- LL$LLF
+     return(LL0)      
+    }
+  STAU2 <- matrix(0,ell,MJ); SLL <- matrix(0,ell,MJ)
+  TLL <- numeric(MJ); SSIG2 <- numeric(ell)
+  MLL <- -1e10
+  for (J in 1:MJ)
+    {
+     q <- J; TLL[J] <- 0
+     for (I in 1:ell)
+       {
+        NO <- I
+        LLF1 <- optimize(LogL, lower=1e-6, upper=1e3, maximum=TRUE, 
+                         y=y, ell=ell, q=q, k=k, NO=NO, N=N)
+        TAU2 <- LLF1$maximum; LL <- LLF1$objective
+        STAU2[I,J] <- TAU2; SLL[I,J] <- LL
+        TLL[J] <- TLL[J] + LL
+       }
+     if (TLL[J] > MLL)
+       {
+        MLL <- TLL[J]; Mq <- q
+       }
+    }
+  q <- Mq; L1 <- ell*(q+1)
+  arc <- array(dim = c(ell,L1,N))
+  for (I in 1:ell)
+    {
+     NO <- I; TAU2 <- STAU2[I,q]
+     MAT <- FGset1(ell, q, k, NO)
+     m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG
+     OSW <- 1; ISW <- 0; L <- ell*q+NO-1
+     Q <- TAU2*diag(L); R <- diag(1)
+     XF0 <- numeric(m); VF0 <- 150 * diag(m)
+     LLF2 <- KF2(y, XF0, VF0, F, G, Q, R, ISW, OSW, m, ell, q, NO, N)
+     XPS <- LLF2$XPS; XFS <- LLF2$XFS
+     VPS <- LLF2$VPS; VFS <- LLF2$VFS
+     SIG2 <- LLF2$Ovar; SSIG2[I] <- SIG2; GSIG2 <- 1
+     XVS <- SMO1(XPS, XFS, VPS, VFS, F, GSIG2, m, L, N)
+     arc[I,1:L,] <- XVS$arc
+    }
+  print(SLL)
+  print(STAU2)
+  print(TLL)
+  print(SSIG2)
+  print(q)
+  # 時変VARモデルのパラメータ -------------------------------------------------
+  TVCOE <- array(dim = c(ell, ell, q, N))
+  TVVAR <- array(dim = c(ell, ell, N))
+  for (n in 1:N)
+    {
+     arc1 <- arc[,,n]
+     LLF3 <- COEest(arc1, SSIG2, ell, q)
+     TVCOE[,,,n] <- LLF3$A; TVVAR[,,n] <- LLF3$SIGMA
+    }
+  # 時変係数のグラフ作成 ------------------------------------------------------
+  t <- c(1:N); xt <- TVCOE[1,1,1,]
+  par(mfrow = c(1,3), oma=c(0,0,0,0) + 0.1, mar = c(4,4,2,2) + 0.1)
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(a)", 
+       xlab="time", ylab="", lwd=2)
+  xt <- TVCOE[2,1,1,]
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(b)", 
+       xlab="time", ylab="", lwd=2)
+  xt <- TVCOE[3,1,1,]
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(c)", 
+       xlab="time", ylab="", lwd=2)
+  # 誤差項の相関係数のグラフ作成 ----------------------------------------------
+  t <- c(1:N); t <- TVVAR[1,2,]/sqrt(TVVAR[1,1,]*TVVAR[2,2,])
+  par(mfrow = c(1,3), oma=c(0,0,0,0) + 0.1, mar = c(4,4,2,2) + 0.1)
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(a)", 
+       xlab="time", ylab="", lwd=2)
+  xt <- TVVAR[1,3,]/sqrt(TVVAR[1,1,]*TVVAR[3,3,])
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(b)", 
+       xlab="time", ylab="", lwd=2)
+  xt <- TVVAR[2,3,]/sqrt(TVVAR[2,3,]*TVVAR[3,3,])
+  plot(t, xt, xlim=range(t), ylim=c(-1,1), type="l", main="(c)", 
+       xlab="time", ylab="", lwd=2)
+  # 時変スペクトルの計算 ------------------------------------------------------
+  N1 <- N/6
+  TVCSP <- array(dim = c(ell, ell, NF, N1))
+  TVCHR <- array(dim = c(ell, ell, NF, N1))
+  TVRNC <- array(dim = c(ell, ell, NF, N1))
+  for (n1 in 1:N1)
+    {
+     n <- 6 * n1; A <- TVCOE[,,,n]; SIGMA <- TVVAR[,,n]
+     LLF4 <- CSPest(A, SIGMA, ell, q, NF)
+     TVCSP[,,,n1] <- LLF4$CSP
+     TVCHR[,,,n1] <- LLF4$CHR
+     TVRNC[,,,n1] <- LLF4$RNC
+    }
+  # 時変スペクトルのグラフ作成 ------------------------------------------------
+  #m1 <- max(log(Re(TVCSP[1,1,,])),log(Re(TVCSP[2,2,])),log(Re(TVCSP[3,3,,])))
+  #m2 <- min(log(Re(TVCSP[1,1,,])),log(Re(TVCSP[2,2,])),log(Re(TVCSP[3,3,,])))
+  t <- 6*c(1:N1); fr <- 0.5*c(1:NF)/NF
+  par(mfrow = c(3,3), oma=c(0,0,0,0) + 0.1, mar = c(4,4,2,2) + 0.1)
+  library(lattice)
+  for (I in 1:ell)
+    {
+     for (J in 1:ell)
+       {
+        if (I == J)
+          {
+           z <- log(Re(TVCSP[I,I,,]))
+           persp(fr,t,z,theta=45,phi=30,xlab="frequency", 
+           ylab="time", zlab="log p(f)",main="")
+          }
+        else
+          {
+           z <- log(Re(TVCHR[I,J,,]))
+           if (J > I)
+             {
+              persp(fr,t,z,theta=45,phi=30,xlab="frequency", 
+              ylab="time", zlab="coh(f)",main="")
+             }
+           else
+             {
+              contour(fr,t,z,main="",xlab="frequency",ylab="time")
+             }
+          }
+       }
+    }
+  # 時変相対ノイズ寄与率のグラフ作成 ------------------------------------------
+  t <- 6*c(1:N1); fr <- 0.5*c(1:NF)/NF; m1 <- max(TVRNC); m2 <- min(TVRNC)
+  par(mfrow = c(3,3), oma=c(0,0,0,0) + 0.1, mar = c(2,2,2,2) + 0.1)
+  library(lattice)
+  for (I in 1:ell)
+    {
+     for (J in 1:ell)
+       {
+        z <- TVRNC[I,J,,]
+        persp(fr,t,z,theta=45,phi=30,xlim=range(fr), 
+              ylim=range(t),zlim=range(m1,m2),
+        xlab="frequency", ylab="time", zlab="RNC",main="")
+       }
+    }
+  # 時変相互共分散関数の計算 --------------------------------------------------
+  N1 <- N/6; M <- max(q,Mn) + 1; TVCV <- array(dim = c(ell, ell, M, N1))
+  for (n1 in 1:N1)
+    {
+     n <- 6*n1; A <- TVCOE[,,,n]; SIGMA <- TVVAR[,,n]
+     TVCV[,,,n1] <- CCVAR(A, SIGMA, ell, q, Mn)
+    }
+  # 時変自己共分散関数のグラフ作成 --------------------------------------------
+  library(lattice)
+  par(mfrow = c(3,3), oma=c(0,0,0,0) + 0.1, mar = c(2,2,2,2) + 0.1)
+  t <- 6*c(1:N1); L <- c(1:M); m1 <- max(TVCV); m2 <- min(TVCV)
+  for (I in 1:ell)
+    {
+     for (J in 1:ell)
+       {
+        z <- TVCV[I,J,,]
+        persp(L,t,z,theta=45,phi=30,xlim=range(L), 
+              ylim=range(t),zlim=range(m1,m2),
+        xlab="Lag", ylab="time", zlab="CV",main="")
+       }
+    }
+ #=============================================================================

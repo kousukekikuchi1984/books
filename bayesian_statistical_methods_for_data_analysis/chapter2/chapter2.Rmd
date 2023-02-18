@@ -1,0 +1,21 @@
+---
+title: "chapter2"
+author: "Kousuke Kikuchi"
+date: "September 30, 2015"
+output: html_document
+---
+
+
+Box-Cox変換
+```{r}
+library(car)
+x <- read.table("../r3/dataset/PDA-F.txt", header=T)
+hist(x[,1])
+
+# Box-Cox変換
+# powerTransformをかけてλを推定
+# bxPowerで変換
+summary(p1 <- powerTransform(x[,1]))
+hist(bcPower(x[,1], p1$roundlam)) # 変換前, 変換後
+```
+

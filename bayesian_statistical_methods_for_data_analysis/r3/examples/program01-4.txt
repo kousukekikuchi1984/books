@@ -1,0 +1,14 @@
+  #===== Program 1.4（ヒストグラムの作成）=======================================
+  # 作業ディレクトリが C ドライブのフォルダ RW であるとき
+  setwd("C:/RW")
+  # データを Data に呼び込む
+  Data <- read.table("random1.txt")
+  # データ数 N を求め，第1列のデータをベクトル x に渡す
+  N <- nrow(Data); x <- Data[,1]
+  # データのヒストグラムを描く
+  nclass <- ceiling(1 + log2(N))# スタージェスの式を使用．適当な定数値で設定しても可
+  cwidth <- diff(range(x) / nclass) 
+  breaks <- min(x) + cwidth * 0:nclass
+  h.default <- hist(x, freq = FALSE, xlab = "x", 
+                    ylab = "relative frequency", main=" ")
+  #============================================================================

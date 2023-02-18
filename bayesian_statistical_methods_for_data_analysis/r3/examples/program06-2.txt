@@ -1,0 +1,175 @@
+  #== Program 6.2（ナイーブベイズ分類器による判別：多項分布モデル）==
+  # データファイルが C ドライブのフォルダ RW にあるとき
+  setwd("C:/RW")
+  data <- read.table("KEIRETSU.txt", header=T)
+  # データ数を求め，N に与える
+  N <- nrow(data); M <- ncol(data)
+  N0 <- 3   # 系列状態判断の時間差
+  K <- 10   # 特性値のカテゴリー数
+  # データ整理の関数 ------------------------------------------------
+  DATA <- function(data, N0, N, M, K)
+    {
+     NN0 <- N - N0; Y <- data[(N0+1):N,M]; X <- matrix(0,NN0,M-1)
+     for (i in 1:NN0)
+       {
+        for (j in 1:(M-1))
+          {
+           X[i,j] <- data[i+N0,j] - data[i,j]
+          }
+       }
+     Xmax <- apply(X,2,max); Xmin <- apply(X,2,min)
+     LL <- matrix(0,K,M-1); UL <- matrix(0,K,M-1)
+     for (j in 1:(M-1))
+       {
+        IT1 <- (Xmax[j] - Xmin[j])/(K-1)
+        LL[1,j] <- Xmin[j] - 0.1*IT1
+        IT <- ((K-1) + 0.2)*IT1/K
+        for (k in 1:(K-1))
+          {
+           UL[k,j] <- LL[k,j] + IT
+           LL[k+1,j] <- UL[k,j]
+          }
+        UL[K,j] <- LL[K,j] + IT
+       }
+     NN <- trunc(NN0/2); DY1 <- numeric(NN+1); Y2 <- numeric(NN)
+     DX1 <- matrix(0,NN+1,M-1); X2 <- matrix(0,NN,M-1)
+     for (i in 1:NN)
+       {
+        I1 <- 2*(i-1) + 1; I2 <- 2*(i-1) + 2
+        DY1[i] <- Y[I1]; Y2[i] <- Y[I2]
+        for (j in 1:(M-1))
+          {
+           for (k in 1:K)
+             {
+              if ((X[I1,j] > LL[k,j]) && (X[I1,j] <= UL[k,j]))
+                {
+                 DX1[i,j] <- k
+                }
+             }
+          }
+        for (j in 1:(M-1))
+          {
+           for (k in 1:K)
+             {
+              if ((X[I2,j] > LL[k,j]) && (X[I2,j] <= UL[k,j]))
+                {
+                 X2[i,j] <- k
+                }
+             }
+          }
+       }
+     N1 <- NN; N2 <- NN
+     if (NN0 > 2*NN)
+       {
+        N1 <- N1 + 1; I1 <- 2*(N1-1) + 1
+        DY1[N1] <- Y[I1]
+        for (j in 1:(M-1))
+          {
+           for (k in 1:K)
+             {
+              if ((X[I1,j] > LL[k,j]) && (X[I1,j] <= UL[k,j]))
+                {
+                 DX1[N1,j] <- k
+                }
+             }
+          }
+       }
+     Y1 <- DY1[1:N1]; X1 <- DX1[1:N1,]
+     return(list(Y1=Y1, X1=X1, N1=N1, Y2=Y2, X2=X2, N2=N2)) 
+    }
+  # パラメータ推定の関数 --------------------------------------------
+  PRest <- function(Y, X, N, M, K) 
+    {
+     P <- matrix(1,K,M-1); Q <- matrix(1,K,M-1); NO1 <- 0; NO2 <- 0
+     for (i in 1:N)
+       {
+        if (Y[i] > 0)
+          {
+           NO1 <- NO1 + 1
+           for (j in 1:(M-1))
+             {
+              for (k in 1:K)
+                {
+                 if (X[i,j] == k)
+                   {
+                    P[k,j] <- P[k,j] + 1
+                   }
+                }
+             }
+          } 
+        else
+          {
+           NO2 <- NO2 + 1
+           for (j in 1:(M-1))
+             {
+              for (k in 1:K)
+                {
+                 if (X[i,j] == k)
+                   {
+                    Q[k,j] <- Q[k,j] + 1
+                   }
+                }
+             }
+          }
+       }
+     P <- P/(NO1 + K); Q <- Q/(NO2 + K)
+     return(list(P=P, Q=Q, NO1=NO1, NO2=NO2)) 
+    }
+  # データを訓練データとテストデータへの区分と整理 ------------------
+  DAT <- DATA(data, N0, N, M, K)
+  Y1 <- DAT$Y1; X1 <- DAT$X1; N1 <- DAT$N1
+  Y2 <- DAT$Y2; X2 <- DAT$X2; N2 <- DAT$N2
+  # 訓練データによるパラメータの推定 --------------------------------
+  PRAB <- PRest(Y1, X1, N1, M, K)
+  P <- PRAB$P; Q <- PRAB$Q
+  NO1 <- PRAB$NO1; NO2 <- PRAB$NO2
+  #PI1 <- NO1/(NO1+NO2); PI2 <- 1-PI1     # pi に最尤推定を使用
+  PI1 <- 0.5; PI2 <- 1-PI1                # pi に無情報事前分布を使用
+  # ナイーブベイズ分類器によるテストデータの判別 --------------------
+  LL1 <- numeric(N2)
+  LL2 <- numeric(N2)
+  RC1 <- numeric(N2)
+  for (i in 1:N2)
+    {
+     LP1 <- 0; LP2 <- 0
+     for (j in 1:(M-1))
+       {
+        for (k in 1:K)
+          {
+           if (X2[i,j] == k)
+             {
+              LP1 <- LP1 + log(PI1*P[k,j])
+             }
+           if (X2[i,j] == k)
+             {
+              LP2 <- LP2 + log(PI2*Q[k,j])
+             }
+          }
+       }
+     LL1[i] <- LP1; LL2[i] <- LP2
+     if (LL1[i] > LL2[i])
+       {
+        RC1[i] <- 1
+       }
+    }
+  # ナイーブベイズ分類器によるテストデータ判別の誤判別率の計算 ------
+  NN <- 0
+  for (i in 1:N2)
+    {
+     if ((Y2[i] == 1) && (RC1[i] == 1))
+       {
+        NN <- NN + 1
+       }
+     if ((Y2[i] < 1) && (RC1[i] < 1))
+       {
+        NN <- NN + 1
+       }
+    }
+  ER <- (N2 - NN)/N2
+  # 主要結果の出力 --------------------------------------------------
+  print("Number of training data ="); print(N1)
+  print("Number of test data ="); print(N2)
+  print("pi1 ="); print(PI1)
+  print("Number for y=1 in test data ="); print(NN)
+  print("Rate of misdiscrimination by NB ="); print(ER)
+ #===================================================================

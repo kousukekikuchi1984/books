@@ -1,0 +1,368 @@
+  #=====Program 9（AR成分付き季節調整モデルの推定）============================
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  data <- read.table("GDP.txt")
+  # データ数 N を求める
+  N <- nrow(data); y <- log(data[,1])
+  # オプションの設定 ----------------------------------------------------------
+  limy <- 1e4     # 異常値や欠測値の下限
+  MJ <- 6         # AR成分モデル次数の最大値 (MJ > 0)
+  p <- 4          # 季節変動の周期 (p > 0)
+  k <- 2          # トレンド成分モデルの次数 (k > 0)
+  MM <- 5         # AR成分モデル推定のための反復計算の回数 (MM > 0)
+  # PARCORからAR係数を計算する関数 --------------------------------------------
+  ARCOEF <- function(par, q)
+    {
+     aa <- numeric(50)
+     al <- numeric(q)
+     if (q == 1)
+       {
+        al <- par
+       }
+     else
+       {
+        for (II in 1:q)
+          {
+           al[II] <- par[II]; aa[II] <- par[II]
+           if (II > 1)
+             {
+              for (J in 1:(II-1))
+                {
+                 al[J] <- aa[J] - par[II]*aa[II-J]
+                }
+              if (II < q)
+                {
+                 for (J in 1:(II-1))
+                   {
+                    aa[J] <- al[J]
+                   }
+                }
+             }
+          }
+       } 
+     return(al)
+    }
+  # AR成分付き季節調整モデルの状態空間表現の行列設定 --------------------------
+  FGHset2 <- function(al, k, p, q)
+    {
+     m <- k + p + q - 1
+     if (q > 0) {G <- matrix(0,m,3)}
+     else {G <- matrix(0,m,2)}
+     F <- matrix(0,m,m); H <- matrix(0,1,m)
+     G[1,1] <- 1; H[1,1] <- 1
+     if (k == 1) {F[1,1] <- 1}
+     if (k == 2) {F[1,1] <- 2; F[1,2] <- -1; F[2,1] <- 1}
+     if (k == 3) {F[1,1] <- 3; F[1,2] <- -3; F[1,3] <- 1
+                  F[2,1] <- 1; F[3,2] <- 1}
+     LS <- k; NS <- 2; G[LS+1,NS] <- 1; H[1,LS+1] <- 1
+     for (i in 1:(p-1))
+       {F[LS+1,LS+i] <- -1}
+     for (i in 1:(p-2))
+       {F[LS+i+1,LS+i] <- 1}
+     LS <- LS + p - 1
+     if (q > 0)
+       {NS <- NS + 1; G[LS+1,NS] <- 1; H[1,LS+1] <- 1
+        for (i in 1:q)
+          {F[LS+1,LS+i] <- al[i]}
+        if (q > 1)
+          {for (i in 1:(q-1))
+             {F[LS+i+1,LS+i] <- 1}
+          }
+       }
+     return(list(m=m, MatF=F, MatG=G, MatH=H))
+    }
+  # AR成分付き季節調整モデルの状態空間表現における行列 Q の設定 ---------------
+  Qset <- function(TAU12, TAU22, TAU32, k, p, q)  
+    {
+     NS <- 0
+     if (k > 0) {NS <- NS + 1}
+     if (p > 0) {NS <- NS + 1}
+     if (q > 0) {NS <- NS + 1}
+     Q <- diag(NS); NS <- 0
+     if (k > 0) {NS <- NS + 1; Q[NS,NS] <- TAU12}
+     if (p > 0) {NS <- NS + 1; Q[NS,NS] <- TAU22}
+     if (q > 0) {NS <- NS + 1; Q[NS,NS] <- TAU32}
+     return(Q)
+    }
+  # カルマンフィルタの関数 ----------------------------------------------------
+  KF <- function(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)  
+    {
+     if (OSW == 1)
+       {
+        XPS <- matrix(0, m, N); XFS <- matrix(0, m, N)
+        VPS <- array(dim = c(m, m, N)); VFS <- array(dim = c(m, m, N))
+       }
+     XF <- XF0; VF <- VF0; NSUM <- 0; SIG2 <- 0; LDET <- 0
+     for (n in 1:N)
+       {
+        # 1期先予測
+        XP <- F %*% XF
+        VP <- F %*% VF %*% t(F) +  G %*% Q %*% t(G)
+        # フィルタ
+        if (y[n] < limy) 
+          {
+           NSUM <- NSUM + 1
+           B <- H %*% VP %*% t(H) + R
+           B1 <- solve(B)
+           K <- VP %*% t(H) %*% B1
+           e <- y[n] - H %*% XP
+           XF <- XP + K %*% e
+           VF <- VP - K %*% H %*% VP
+           SIG2 <- SIG2 + t(e) %*% B1 %*% e
+           LDET <- LDET + log(det(B))
+          }
+        else
+          {
+           XF <- XP; VF <- VP
+          }
+        if (OSW == 1)
+          {
+           XPS[,n] <- XP; XFS[,n] <- XF; VPS[,,n] <- VP; VFS[,,n] <- VF
+          }   
+       }
+     SIG2 <- SIG2 / NSUM
+     if (ISW == 0)
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi * SIG2) + 1) + LDET)
+       }
+     else
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi) + SIG2) + LDET)
+       }
+     if (OSW == 0)
+       {
+        return(list(LLF=FF, Ovar=SIG2))
+       }
+     if (OSW == 1)
+       {
+        return(list(XPS=XPS, XFS=XFS, VPS=VPS, VFS=VFS, LLF=FF, Ovar=SIG2))
+       }
+    }
+  # 平滑化の関数 --------------------------------------------------------------
+  SMO <- function(XPS, XFS, VPS, VFS, F, GSIG2, k, p, q, m, N)
+    {
+     XSS <- matrix(0, m, N); VSS <- array(dim = c(m, m, N))
+     XS1 <- XFS[,N]; VS1 <- VFS[,,N]; XSS[,N] <- XS1; VSS[,,N] <- VS1
+     for (n1 in 1:(N-1))
+       {
+        n <- N - n1; XP <- XPS[,n+1]; XF <- XFS[,n]
+        VP <- VPS[,,n+1]; VF <- VFS[,,n]; VPI <- solve(VP)
+        A <- VF %*% t(F) %*% VPI
+        XS2 <- XF + A %*% (XS1 - XP)
+        VS2 <- VF + A %*% (VS1 - VP) %*% t(A)
+        XS1 <- XS2; VS1 <- VS2; XSS[,n] <- XS1; VSS[,,n] <- VS1
+       }
+     t <- numeric(N); s <- numeric(N); r <- numeric(N)
+     tv <- numeric(N); sv <- numeric(N); rv <- numeric(N)
+     if (q == 0)
+       {for (n in 1:N)
+          {t[n] <- XSS[1,n]; s[n] <- XSS[k+1,n]
+           tv[n] <- GSIG2 * VSS[1,1,n]
+           sv[n] <- GSIG2 * VSS[k+1,k+1,n]
+          }
+       }
+     else
+       {
+        for (n in 1:N)
+          {t[n] <- XSS[1,n]; s[n] <- XSS[k+1,n]
+           r[n] <- XSS[k+p,n]; tv[n] <- GSIG2 * VSS[1,1,n]
+           sv[n] <- GSIG2 * VSS[k+1,k+1,n]
+           rv[n] <- GSIG2 * VSS[k+p,k+p,n]
+          }
+       }
+     return(list(trd=t, sea=s, arc=r, trv=tv, sev=sv, arv=rv))
+    }
+  # カルマンフィルタおよび平滑化の関連計算 ------------------------------------
+  TSRest <- function(y, TAU12, TAU22, TAU32, al, OSW, limy, k, p, q, N)
+    {
+     MAT <- FGHset2(al, k, p, q)
+     m <- MAT$m; F <- MAT$MatF
+     G <- MAT$MatG; H <- MAT$MatH; ISW <- 0
+     Q <- Qset(TAU12, TAU22, TAU32, k, p, q)
+     R <- diag(1); XF0 <- numeric(m); VF0 <- 100 * diag(m)
+     for (i in 1:k)
+       {XF0[i] <- y[1]}
+     if (q > 0)
+       {for (i in 1:q)
+          {VF0[k+p+i-1,k+p+i-1] <- 10}
+       }
+     LLF <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)
+     if (OSW == 1)
+       {
+        XPS <- LLF$XPS; XFS <- LLF$XFS
+        VPS <- LLF$VPS; VFS <- LLF$VFS
+        SIG2 <- LLF$Ovar; LL <- LLF$LLF
+        XVS <- SMO(XPS, XFS, VPS, VFS, F, SIG2, k, p, q, m, N)
+        xt <- XVS$trd; xs <- XVS$sea; xr <- XVS$arc
+        return(list(LLF=LL, xt=xt, xs=xs, xr=xr, SIG2=SIG2))
+       }
+     else
+       {
+        LL <- LLF$LLF; SIG2 <- LLF$Ovar
+       }
+     return(list(LLF=LL, SIG2=SIG2))
+    }
+  # 標準的な季節調整モデルにおけるTAU12の対数尤度関数の定義 -------------------
+  LogLI1 <- function(theta, y, limy, k, p, N)  
+    {
+     TAU12 <- theta
+     # TAU22に関する最適化
+     LLF <- optimize(LogLI2, lower=1e-4, upper=1e2, maximum=TRUE, 
+                     y=y, TAU12=TAU12, limy=limy, k=k, p=p, N=N)
+     LL <- LLF$objective
+     return(LL)  
+    }
+  # 標準的な季節調整モデルにおけるTAU22の対数尤度関数の定義（TAU12は所与）-----
+  LogLI2 <- function(theta, y, TAU12, limy, k, p, N)
+    {
+     TAU22 <- theta
+     LLF <- TSRest(y, TAU12, TAU22, 0, 0, 0, limy, k, p, 0, N)
+     LL <- LLF$LLF
+     return(LL)
+    }
+  # AR成分付き季節調整モデルにおけるTAU32の対数尤度（TAU12, TAU22は所与）------
+  LogL1 <- function(theta, y, TAU12, TAU22, Spar, limy, k, p, q, N)  
+    {
+     TAU32 <- theta
+     # PARCORに関する最適化
+     if (q == 1)
+       {
+        LLF <- optimize(LogL2, lower=-0.95, upper=0.95, maximum=TRUE, y=y, 
+           TAU12=TAU12, TAU22=TAU22, TAU32=TAU32, limy=limy, k=k, p=p, N=N)
+       }
+     else
+       {
+        LLF <- optimize(LogL3, lower=-0.95, upper=0.95, maximum=TRUE, 
+                        y=y, TAU12=TAU12, TAU22=TAU22, TAU32=TAU32, 
+                        Spar=Spar, limy=limy, k=k, p=p, q=q, N=N)
+       }
+     LL <- LLF$objective
+     return(LL)  
+    }
+  #１次のPARCORの対数尤度（TAU12, TAU22，TAU32は所与）-------------------------
+  LogL2 <- function(theta, y, TAU12, TAU22, TAU32, limy, k, p, N)  
+    {
+     al <- numeric(1); al[1] <- theta
+     LLF <- TSRest(y, TAU12, TAU22, TAU32, al, 0, limy, k, p, 1, N)
+     LL <- LLF$LLF
+     return(LL)  
+    }
+  # (q > 1)次以上のPARCORの対数尤度
+  #（(q-1)次までのPARCOR, TAU12, TAU22，TAU32は所与）--------------------------
+  LogL3 <- function(theta, y, TAU12, TAU22, TAU32, Spar, limy, k, p, q, N)  
+    {
+     par <- numeric(q); par[1:(q-1)] <- Spar[1:(q-1)]
+     par[q] <- theta; al <- ARCOEF(par, q)
+     LLF <- TSRest(y, TAU12, TAU22, TAU32, al, 0, limy, k, p, q, N)
+     LL <- LLF$LLF
+     return(LL)  
+    }
+  # AR成分付き季節調整モデルにおけるTAU12の対数尤度（al, TAU32は所与）---------
+  LogL4 <- function(theta, y, TAU32, al, limy, k, p, q, N)  
+    {
+     TAU12 <- theta
+     # TAU22に関する最適化
+     LLF <- optimize(LogL5, lower=1e-4, upper=1e2, maximum=TRUE, y=y, 
+            TAU12=TAU12, TAU32=TAU32, al=al, limy=limy, k=k, p=p, q=q, N=N)
+     LL <- LLF$objective
+     return(LL)  
+    }
+  # AR成分付き季節調整モデルにおけるTAU22の対数尤度（TAU12，TAU32は所与）------
+  LogL5 <- function(theta, y, TAU12, TAU32, al, limy, k, p, q, N)
+    {
+     TAU22 <- theta
+     LLF <- TSRest(y, TAU12, TAU22, TAU32, al, 0, limy, k, p, q, N)
+     LL <- LLF$LLF
+     return(LL)
+    }
+  # 標準的な季節調整モデルにおけるTAU12に関する最適化 -------------------------
+  LLF1 <- optimize(LogLI1, lower=1e-4, upper=1e2, maximum=TRUE, 
+                   y=y, limy=limy, k=k, p=p, N=N)
+  ITAU12 <- LLF1$maximum
+  # 標準的な季節調整モデルにおけるTAU22に関する最適化（TAU12は所与） ----------
+  LLF2 <- optimize(LogLI2, lower=1e-4, upper=1e2, maximum=TRUE, 
+                   y=y, TAU12=ITAU12, limy=limy, k=k, p=p, N=N)
+  ITAU22 <- LLF2$maximum
+  STAU12 <- numeric(MJ)     # トレンド成分モデルの誤差分散の保存スペース
+  STAU22 <- numeric(MJ)     # 季節成分モデルの誤差分散の保存スペース
+  STAU32 <- numeric(MJ)     # AR 成分モデルの誤差分散の保存スペース
+  SSIG2 <- numeric(MJ)      # 観測ノイズの分散の保存スペース
+  SLL <- numeric(MJ)        # 最大対数尤度の保存スペース
+  SAIC <- numeric(MJ)       # AIC の保存スペース
+  Sal <- matrix(0, MJ, MJ)  # AR 成分モデルの係数の保存スペース（各行ごと）
+  Spar <- numeric(MJ)       # PARCOR の保存スペース
+  MAIC <- 1e10
+  # AR 成分モデルの次数選択 ----------------------------------------------------
+  for (J in 1:MJ)
+    {
+     q <- J;  PAR <- numeric(q)
+     for (II in 1:MM)
+       {if ((q == 1) && (II == 1)) {TAU12 <- ITAU12; TAU22 <- ITAU22}
+        # TAU32に関する最適化
+        LLF3 <- optimize(LogL1, lower=1e-4, upper=1e2, maximum=TRUE, y=y, 
+         TAU12=TAU12, TAU22=TAU22, Spar=Spar, limy=limy, k=k, p=p, q=q, N=N)
+        TAU32 <- LLF3$maximum
+        # PARCORに関する最適化
+        if (q == 1)
+          {
+           LLF4 <- optimize(LogL2, lower=-0.95, upper=0.95, maximum=TRUE, y=y, 
+              TAU12=TAU12, TAU22=TAU22, TAU32=TAU32, limy=limy, k=k, p=p, N=N)
+           par <- LLF4$maximum; PAR[1] <- par; al <- numeric(1); al[1] <- par
+          }
+        else
+          {
+           LLF4 <- optimize(LogL3, lower=-0.95, upper=0.95, maximum=TRUE, y=y, 
+                            TAU12=TAU12, TAU22=TAU22, TAU32=TAU32, Spar=Spar, 
+                            limy=limy, k=k, p=p, q=q, N=N)
+           par <- LLF4$maximum; PAR[1:(q-1)] <- Spar[1:(q-1)]
+           PAR[q] <- par; al <- ARCOEF(PAR, q)
+          }
+        # TAU12に関する最適化
+        LLF5 <- optimize(LogL4, lower=1e-4, upper=1e2, maximum=TRUE, y=y, 
+                        TAU32=TAU32, al=al, limy=limy, k=k, p=p, q=q, N=N)
+        TAU12 <- LLF5$maximum
+        # TAU22に関する最適化
+        LLF6 <- optimize(LogL5, lower=1e-4, upper=1e2, maximum=TRUE, y=y, 
+               TAU12=TAU12, TAU32=TAU32, al=al, limy=limy, k=k, p=p, q=q, N=N)
+        TAU22 <- LLF6$maximum
+       }
+     LLF7 <- TSRest(y, TAU12, TAU22, TAU32, al, 0, limy, k, p, q, N)
+     LL <- LLF7$LLF; SIG2 <- LLF7$SIG2
+     AIC <- -2 * LL + 2 * (q + 4)
+     if (AIC < MAIC)
+       {
+        MAIC <- AIC; Mq <- q
+       }
+     Sal[q,1:q] <- al; Spar[q] <- PAR[q]
+     STAU12[q] <- TAU12; STAU22[q] <- TAU22
+     STAU32[q] <- TAU32; SSIG2[q] <- SIG2
+     SLL[q] <- LL; SAIC[q] <- AIC
+    }
+  TAU12 <- STAU12[Mq]; TAU22 <- STAU22[Mq]
+  TAU32 <- STAU32[Mq]; al <- Sal[Mq,1:Mq]
+  LLF8 <- TSRest(y, TAU12, TAU22, TAU32, al, 1, limy, k, p, Mq, N)
+  xt <- LLF8$xt                # トレンド成分
+  xs <- LLF8$xs                # 季節成分
+  xr <- LLF8$xr                # AR 成分
+  w <- y - xt - xs - xr        # 観測ノイズ
+  yad <- y - xs                # 季節調整済み系列
+  # 主要な結果をディスプレーに出力 --------------------------------------------
+  print(SLL)
+  print(SAIC)
+  print(STAU12)
+  print(STAU22)
+  print(STAU32)
+  print(SSIG2)
+  print(Sal)
+  print(Spar)
+  print(Mq)
+  # 主要な結果をファイルに出力 ------------------------------------------------
+  write.csv(SLL, "LL-spf")
+  write.csv(SAIC, "AIC-spf")
+  write.csv(STAU12, "TAU12-spf")
+  write.csv(STAU22, "TAU22-spf")
+  write.csv(STAU32, "TAU32-spf")
+  write.csv(SSIG2, "SIG2-spf")
+  write.csv(Sal, "Alpha-spf")
+  write.csv(Spar, "PARCOR-spf")
+  #============================================================================

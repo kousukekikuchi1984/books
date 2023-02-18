@@ -1,0 +1,33 @@
+  #===== Program 4.4（重点サンプリングによる半円形分布の特性値の推定）=========
+  setwd("C:/RW")
+  N <- 5000; mu = sqrt(2 / pi); sig = 1/sqrt(2 * pi)
+  # N(mu, sig^2) の正規乱数 N 個発生させ，それを X に保存 ---------------------
+  X <-  rnorm(N, mean = mu, sd = sig)
+  w <- numeric(N)
+  # 重み関数を計算し，w に保存 ------------------------------------------------
+  for (i in 1:N)
+    {
+     if (X[i] > 0 & X[i] < 2*mu)
+       {w[i] <- sqrt(X[i]*(2*mu - X[i])) / dnorm(X[i], mean = mu, sd = sig)}
+     else
+       {w[i] <- 0}
+    }
+    
+  MA <- numeric(N); MV <- numeric(N)
+  TMA <- numeric(N) + mu; TMV <- numeric(N) + 1/(2*pi)
+  t <- c(1:N); SA <- 0; SS <- 0; mw <- 0
+  # 平均と分散の推定値の系列を計算 --------------------------------------------
+  for (M in 1:N)
+    {
+     mw <- mw + w[M]; SA <- SA + X[M] * w[M]
+     SS <- SS + X[M]^2 * w[M]
+     MA[M] <- SA/mw; MV[M] <- SS/mw - MA[M]^2
+    }
+    
+  # 平均の推定値の折れ線グラフ ------------------------------------------------
+  plot(t, MA, xlim=range(t), ylim=c(0,0.9), type="l", xlab="M", 
+       ylab="Series of estimates", lwd=2)  # 平均のモンテカルロ近似の折れ線
+  lines(t, TMA, lwd=1)                     # 平均の理論値の直線
+  lines(t, MV, lwd=2)                      # 分散のモンテカルロ近似の折れ線
+  lines(t, TMV, lwd=1)                     # 分散の理論値の直線
+  #============================================================================

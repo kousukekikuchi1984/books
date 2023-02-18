@@ -1,0 +1,28 @@
+---
+title: "chapter3"
+author: "Kousuke Kikuchi"
+date: "July 3, 2015"
+output: html_document
+---
+
+# 3. 一般化線形モデル
+- 今までの回帰分析はばらつきをすべて正規分布で表現していたが、実際は正規分布を用いられることは少ない
+- 一般化線形モデルは正規分布ではなく、様々な確率分布を用いることができる
+
+
+### 3.1 個体ごとに平均種子数が異なる場合
+- ある２つの標本群に対して、異なる実験処理を行う（肥料を増やすとか）
+- 肥料と個体サイズとの関係をみたいとか
+
+```{r img.width=10, img.height=5, echo=TRUE}
+## csv を読み込む
+## f行は施肥処理を示すfactorクラスのデータ。
+library(rproject)
+print(project_filepath("/kubobook2012/chapter03/data3a.csv"))
+#d <- read.csv(project_filepath("/kubobook2012/chapter03/data3a.csv"))
+```
+
+```{r img.width=10, img.height=5, echo=TRUE}
+#d <- read.csv(path)
+#summary(d)
+```

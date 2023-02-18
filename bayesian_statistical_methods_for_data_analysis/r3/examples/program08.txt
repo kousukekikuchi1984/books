@@ -1,0 +1,309 @@
+  #=====Program 8（トレンドの推定と標準的な季節調整）==========================
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  data <- read.table("GDP.txt")
+  # データ数 N を求め，データを y に渡す
+  N <- nrow(data); y <- log(data[,1])
+  # オプションの設定-----------------------------------------------------------
+  limy <- 1e4; p <- 4
+  # カルマンフィルタの行列設定（トレンド推定と標準的な季節調整の場合）---------
+  FGHset1 <- function(k, p)
+    {
+     if (p == 0)
+       {
+        m <- k; G <- matrix(0,m,1)
+       }
+     else
+       {
+        m <- k + p - 1
+        if (k == 0)
+          {
+           G <- matrix(0,m,1)
+          }
+        else
+          {
+           G <- matrix(0,m,2)
+          }
+       }
+     F <- matrix(0,m,m); H <- matrix(0,1,m); NS <- 0; LS <- 0
+     if (k > 0)
+       {
+        NS <- NS + 1; G[LS+1,NS] <- 1; H[1,LS+1] <- 1
+        if (k == 1)
+          {
+           F[1,1] <- 1
+          }
+        if (k == 2)
+          {
+           F[1,1] <- 2; F[1,2] <- -1; F[2,1] <- 1
+          }
+        if (k == 3)
+          {
+           F[1,1] <- 3; F[1,2] <- -3; F[1,3] <- 1
+           F[2,1] <- 1; F[3,2] <- 1
+          }
+        LS <- LS + k 
+       }
+     if (p > 0)
+       {
+        NS <- NS + 1; G[LS+1,NS] <- 1; H[1,LS+1] <- 1
+        for (i in 1:(p-1))
+          {
+           F[LS+1,LS+i] <- -1
+          }
+        if (p > 2)
+          {
+           for (i in 1:(p-2))
+             {
+              F[LS+i+1,LS+i] <- 1
+             }
+          }
+        LS <- LS + p - 1
+       }
+     return(list(m=m, MatF=F, MatG=G, MatH=H))
+    }
+  # カルマンフィルタの関数 ----------------------------------------------------
+  KF <- function(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)  
+    {
+     if (OSW == 1)
+       {
+        XPS <- matrix(0, m, N); XFS <- matrix(0, m, N)
+        VPS <- array(dim = c(m, m, N)); VFS <- array(dim = c(m, m, N))
+       }
+     XF <- XF0; VF <- VF0; NSUM <- 0; SIG2 <- 0; LDET <- 0
+     for (n in 1:N)
+       {
+        # 1期先予測
+        XP <- F %*% XF
+        VP <- F %*% VF %*% t(F) +  G %*% Q %*% t(G)
+        # フィルタ
+        if (y[n] < limy) 
+          {
+           NSUM <- NSUM + 1
+           B <- H %*% VP %*% t(H) + R
+           B1 <- solve(B)
+           K <- VP %*% t(H) %*% B1
+           e <- y[n] - H %*% XP
+           XF <- XP + K %*% e
+           VF <- VP - K %*% H %*% VP
+           SIG2 <- SIG2 + t(e) %*% B1 %*% e
+           LDET <- LDET + log(det(B))
+          }
+        else
+          {
+           XF <- XP; VF <- VP
+          }
+        if (OSW == 1)
+          {
+           XPS[,n] <- XP; XFS[,n] <- XF; VPS[,,n] <- VP; VFS[,,n] <- VF
+          }   
+       }
+     SIG2 <- SIG2 / NSUM
+     if (ISW == 0)
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi * SIG2) + 1) + LDET)
+       }
+     else
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi) + SIG2) + LDET)
+       }
+     if (OSW == 0)
+       {
+        return(list(LLF=FF, Ovar=SIG2))
+       }
+     if (OSW == 1)
+       {
+        return(list(XPS=XPS, XFS=XFS, VPS=VPS, VFS=VFS, LLF=FF, Ovar=SIG2))
+       }
+    }
+  # 平滑化の関数 --------------------------------------------------------------
+  SMO2 <- function(XPS, XFS, VPS, VFS, F, GSIG2, N, p, k, m)
+    {
+     XSS <- matrix(0, m, N); VSS <- array(dim = c(m, m, N))
+     XS1 <- XFS[,N]; VS1 <- VFS[,,N]
+     XSS[,N] <- XS1; VSS[,,N] <- VS1
+     for (n1 in 1:(N-1))
+       {
+        n <- N - n1; XP <- XPS[,n+1]; XF <- XFS[,n]
+        VP <- VPS[,,n+1]; VF <- VFS[,,n]; VPI <- solve(VP)
+        A <- VF %*% t(F) %*% VPI
+        XS2 <- XF + A %*% (XS1 - XP)
+        VS2 <- VF + A %*% (VS1 - VP) %*% t(A)
+        XS1 <- XS2; VS1 <- VS2
+        XSS[,n] <- XS1; VSS[,,n] <- VS1
+       }
+    t <- numeric(N); s <- numeric(N)
+    tv <- numeric(N); sv <- numeric(N)
+    if (p > 0)
+      {
+       for (n in 1:N)
+         {
+          t[n] <- XSS[1,n]; s[n] <- XSS[k+1,n]
+          tv[n] <- GSIG2 * VSS[1,1,n]
+          sv[n] <- GSIG2 * VSS[k+1,k+1,n]
+         }
+      }
+    else
+      {
+       for (n in 1:N)
+         {
+          t[n] <- XSS[1,n]; tv[n] <- GSIG2 * VSS[1,1,n]
+         }
+      }
+    return(list(trd=t, sea=s, trv=tv, sev=sv))
+   }
+  # TAU12の対数尤度関数の定義 -------------------------------------------------
+  LogL1 <- function(theta, y, limy, ISW, k, p, N)  
+    {
+     TAU12 <- theta
+     # TAU22に関する最適化
+     if (p == 0)
+       {
+        LL2 <- LogL21(y, TAU12, limy, ISW, k, p, N)
+       }
+     else
+       {
+        LLF2 <- optimize(LogL22, lower=1e-2, upper=1e2, maximum=TRUE, y=y, 
+                         TAU12=TAU12, limy=limy, ISW=ISW, k=k, p=p, N=N)
+        LL2 <- LLF2$objective
+       }
+     return(LL2)  
+    }
+  # TAU22の対数尤度関数の定義（p=0 の場合）------------------------------------
+  LogL21 <- function(y, TAU12, limy, ISW, k, p, N)  
+    {
+     MAT <- FGHset1(k, p)
+     m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG; H <- MAT$MatH
+     OSW <- 0; R <- diag(1); Q <- diag(1); Q[1,1] <- TAU12
+     XF0 <- numeric(m)
+     for (i in 1:k)
+       {
+        XF0[i] <- y[1]
+       }
+     VF0 <- 1e2 * diag(m)
+     LL <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)
+     LL0 <- LL$LLF
+     return(LL0)      
+    }
+  # TAU22の対数尤度関数の定義（p>0 の場合）------------------------------------
+  LogL22 <- function(theta, y, TAU12, limy, ISW, k, p, N)  
+    {
+     TAU22 <- theta
+     MAT <- FGHset1(k, p)
+     m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG; H <- MAT$MatH
+     OSW <- 0; R <- diag(1); Q <- diag(2); Q[1,1] <- TAU12; Q[2,2] <- TAU22
+     XF0 <- numeric(m)
+     for (i in 1:k)
+       {
+        XF0[i] <- y[1]
+       }
+     VF0 <- 1e2 * diag(m)
+     LL <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)
+     LL0 <- LL$LLF
+     return(LL0)      
+    }
+  STAU12 <- numeric(3); STAU22 <- numeric(3)
+  SSIG2 <- numeric(3); SLL <- numeric(3)
+  SAIC <- numeric(3); MAIC <- 1e10; ISW <- 0
+  # k に関するモデル選択 ------------------------------------------------------
+  for (k in 1:3)
+    {
+     # TAU12の最尤推定を求める数値計算 ----------------------------------------
+     LLF1 <- optimize(LogL1, lower=1e-2, upper=1e2, maximum=TRUE, y=y, 
+                      limy=limy, ISW=ISW, k=k, p=p, N=N)
+     TAU12 <- LLF1$maximum
+     # TAU22の最尤推定を求める数値計算 ----------------------------------------
+     if (p > 0)
+       {
+        LLF2 <- optimize(LogL22, lower=1e-2, upper=1e2, maximum=TRUE, y=y, 
+                         TAU12=TAU12, limy=limy, ISW=ISW, k=k, p=p, N=N)
+        TAU22 <- LLF2$maximum
+       }
+     # SIG2の推定値の計算 -----------------------------------------------------
+     MAT <- FGHset1(k, p)
+     m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG; H <- MAT$MatH
+     R <- diag(1)
+     if (p > 0)
+       {
+        Q <- diag(2); Q[2,2] <- TAU22
+       }
+     else
+       {
+        Q <- diag(1)
+       }
+     Q[1,1] <- TAU12; XF0 <- numeric(m)
+     for (i in 1:k)
+       {
+        XF0[i] <- y[1]
+       }
+     VF0 <- 1e2 * diag(m); OSW <- 0
+     LLF3 <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)
+     ESIG2 <- LLF3$Ovar; LL <- LLF3$LLF
+     if (p > 0)
+       {
+        AIC <- -2 * LL + 2 * 3
+       }
+     else
+       {
+        AIC <- -2 * LL + 2 * 2
+       }
+     if (AIC < MAIC)
+       {
+        MAIC <- AIC; Mk <- k
+       }
+     STAU12[k] <- TAU12
+     if (p > 0) 
+       {
+        STAU22[k] <- TAU22
+       }
+     SSIG2[k] <- ESIG2; SLL[k] <- LL; SAIC[k] <- AIC
+    }
+  print(SLL)
+  print(SAIC)
+  print(STAU12)
+  if (p > 0)
+    {
+     print(STAU22)
+    }
+  print(SSIG2)
+  print(Mk)
+  # 状態推定値の計算-----------------------------------------------------------
+  k <- Mk
+  {
+   MAT <- FGHset1(k, p)
+   m <- MAT$m; F <- MAT$MatF; G <- MAT$MatG; H <- MAT$MatH
+   TAU12 <- STAU12[k]; TAU22 <- STAU22[k]
+   if (p > 0)
+     {
+      Q <- diag(2); TAU22 <- STAU22[k]; Q[2,2] <- TAU22
+     }
+   else
+     {
+      Q <- diag(1)
+     }
+   Q[1,1] <- TAU12; XF0 <- numeric(m)
+   for (i in 1:k)
+     {
+      XF0[i] <- y[1]
+     }
+   VF0 <- 1e2 * diag(m); R <- diag(1); OSW <- 1
+   LL2 <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)
+   XPS <- LL2$XPS; XFS <- LL2$XFS
+   VPS <- LL2$VPS; VFS <- LL2$VFS; ESIG2 <- LL2$Ovar
+   XVS <- SMO2(XPS, XFS, VPS, VFS, F, ESIG2, N, p, k, m)
+   xt <- XVS$trd       # トレンド成分
+   e <- y - xt         # 観測ノイズ
+   if (p > 0)
+     {
+      xs <- XVS$sea    # 季節成分
+      e <- e - xs
+     }
+   yad <- y - xs       # 季節調整済み系列
+  }
+ # トレンドと時系列データの折れ線グラフの作成 ---------------------------------
+  t <- c(1:N)
+  # トレンドの折れ線グラフの作成
+  plot(t, xt, xlim=range(t), ylim=range(xt), type="l", 
+       xlab="time", ylab="data and trend", lwd=2)
+  lines(t, y, lwd=1)
+ #=============================================================================

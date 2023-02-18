@@ -1,0 +1,31 @@
+  #===== Program 1.5（複数のヒストグラムを一行に作成）===============
+  # 作業ディレクトリが C ドライブのフォルダ RW であるとき
+  setwd("C:/RW")
+  # 各入力方式のデータを Data に呼び込む，x1, x2, x3 に渡す
+  Data <- read.table("PDA-F.txt", header=T)
+  N1 <- nrow(Data); x1 <- Data[,1]
+  Data <- read.table("PDA-L.txt", header=T)
+  N2 <- nrow(Data); x2 <- Data[,1]
+  Data <- read.table("PDA-S.txt", header=T)
+  N3 <- nrow(Data); x3 <- Data[,1]
+  # グラフのレイアウトを決める
+  par(mfrow = c(1,3), oma=c(0,0,0,0) + 0.1, mar = c(4,4,2,2) + 0.1)
+  # F 方式のデータのヒストグラム---------------------------
+  nclass <- ceiling(1 + log2(N1))
+  cwidth <- diff(range(x1) / nclass) 
+  breaks <- min(x1) + cwidth * 0:nclass
+  h.default <- hist(x1, freq = FALSE, xlab = "x", 
+                    ylab = "relative frequency", main="(a)")
+  # L 方式のデータのヒストグラム---------------------------
+  nclass <- ceiling(1 + log2(N2))
+  cwidth <- diff(range(x2) / nclass) 
+  breaks <- min(x2) + cwidth * 0:nclass
+  h.default <- hist(x2, freq = FALSE, xlab = "x", 
+                    ylab = "relative frequency", main="(b)")
+  # S 方式のデータのヒストグラム---------------------------
+  nclass <- ceiling(1 + log2(N3))
+  cwidth <- diff(range(x3) / nclass) 
+  breaks <- min(x3) + cwidth * 0:nclass
+  h.default <- hist(x3, freq = FALSE, xlab = "x", 
+                    ylab = "relative frequency", main="(c)")
+  #================================================================

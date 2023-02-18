@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+<title>1. 時系列データの解析とその準備</title>
+
+<script type="text/javascript">
+window.onload = function() {
+  var imgs = document.getElementsByTagName('img'), i, img;
+  for (i = 0; i < imgs.length; i++) {
+    img = imgs[i];
+    // center an image if it is the only element of its parent
+    if (img.parentElement.childElementCount === 1)
+      img.parentElement.style.textAlign = 'center';
+  }
+};
+</script>
+
+
+
+<!-- MathJax scripts -->
+<script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+</script>
+
+
+<style type="text/css">
+body, td {
+   font-family: sans-serif;
+   background-color: white;
+   font-size: 13px;
+}
+
+body {
+  max-width: 800px;
+  margin: auto;
+  padding: 1em;
+  line-height: 20px;
+}
+
+tt, code, pre {
+   font-family: 'DejaVu Sans Mono', 'Droid Sans Mono', 'Lucida Console', Consolas, Monaco, monospace;
+}
+
+h1 {
+   font-size:2.2em;
+}
+
+h2 {
+   font-size:1.8em;
+}
+
+h3 {
+   font-size:1.4em;
+}
+
+h4 {
+   font-size:1.0em;
+}
+
+h5 {
+   font-size:0.9em;
+}
+
+h6 {
+   font-size:0.8em;
+}
+
+a:visited {
+   color: rgb(50%, 0%, 50%);
+}
+
+pre, img {
+  max-width: 100%;
+}
+pre {
+  overflow-x: auto;
+}
+pre code {
+   display: block; padding: 0.5em;
+}
+
+code {
+  font-size: 92%;
+  border: 1px solid #ccc;
+}
+
+code[class] {
+  background-color: #F8F8F8;
+}
+
+table, td, th {
+  border: none;
+}
+
+blockquote {
+   color:#666666;
+   margin:0;
+   padding-left: 1em;
+   border-left: 0.5em #EEE solid;
+}
+
+hr {
+   height: 0px;
+   border-bottom: none;
+   border-top-width: thin;
+   border-top-style: dotted;
+   border-top-color: #999999;
+}
+
+@media print {
+   * {
+      background: transparent !important;
+      color: black !important;
+      filter:none !important;
+      -ms-filter: none !important;
+   }
+
+   body {
+      font-size:12pt;
+      max-width:100%;
+   }
+
+   a, a:visited {
+      text-decoration: underline;
+   }
+
+   hr {
+      visibility: hidden;
+      page-break-before: always;
+   }
+
+   pre, blockquote {
+      padding-right: 1em;
+      page-break-inside: avoid;
+   }
+
+   tr, img {
+      page-break-inside: avoid;
+   }
+
+   img {
+      max-width: 100% !important;
+   }
+
+   @page :left {
+      margin: 15mm 20mm 15mm 10mm;
+   }
+
+   @page :right {
+      margin: 15mm 10mm 15mm 20mm;
+   }
+
+   p, h2, h3 {
+      orphans: 3; widows: 3;
+   }
+
+   h2, h3 {
+      page-break-after: avoid;
+   }
+}
+</style>
+
+
+
+</head>
+
+<body>
+<h1>1. 時系列データの解析とその準備</h1>
+
+<ul>
+<li>時系列データの解説と具体的な前処理を紹介している</li>
+</ul>
+
+<h3>1.1 時系列データ</h3>
+
+<ul>
+<li>データに時間経過による周期性が見られるときに時系列分析を使う</li>
+<li>時系列データの特徴を把握するには、グラフで確認することが重要で、そこで、どの手法を使うかを検討する</li>
+</ul>
+
+<h3>1.2 時系列の分析</h3>
+
+<ul>
+<li>連続時間時系列か離散時間時系列
+
+<ul>
+<li>アナログデータかデジタルデータ</li>
+</ul></li>
+<li>一変量時系列か多変量時系列
+
+<ul>
+<li>観測場所で得られるデータが一種類か、複数か</li>
+<li>多変量時系列の場合、変数の選択が重要になってくる</li>
+</ul></li>
+<li>定常時系列か非定常時系列
+
+<ul>
+<li>不規則な変動が、時間的に変化しない一定の確率的モデルである場合は定常</li>
+<li>不規則な変動が、時間的に変化する確率モデルである場合は非定常</li>
+</ul></li>
+<li>ガウス型時系列か非ガウス型時系列
+
+<ul>
+<li>時系列の分布が正規分布かそうでないか。</li>
+<li>非ガウス時系列である場合、適切な正規化をすればガウス時系列とみなせることもある</li>
+</ul></li>
+<li>線形時系列と非線形時系列
+
+<ul>
+<li>出力が線形か非線形か</li>
+</ul></li>
+</ul>
+
+<h3>1.3 時系列分析の目的</h3>
+
+<ul>
+<li>記述 description
+
+<ul>
+<li>図化</li>
+<li>標本自己共分散関数</li>
+<li>標本自己相関関数</li>
+<li>ピリオドグラム</li>
+</ul></li>
+<li>モデリング modeling
+
+<ul>
+<li>時系列のモデルに含まれるパラメータの推定</li>
+<li>時系列の確率的構造の解析</li>
+</ul></li>
+<li>予測 prediction
+
+<ul>
+<li>モデリングを使って、予測をする</li>
+</ul></li>
+<li>信号抽出 signal extraction
+
+<ul>
+<li>時系列から目的となる信号や情報を抽出すること。</li>
+</ul></li>
+</ul>
+
+<h3>1.4 時系列データの前処理</h3>
+
+<ul>
+<li>対数変換
+
+<ul>
+<li>対数変換
+\[z_{n} = log(y_{n})\]</li>
+<li>Box-Cox変換</li>
+<li>ロジット変換
+\[z_{n} = log(\frac{y_{n}} {1-y_{n}})\]</li>
+</ul></li>
+<li>差分
+
+<ul>
+<li>二次成分と一次成分を除去できる
+\[z_{n} = \Delta y_{n}\]</li>
+</ul></li>
+<li>前期比、前年同期比
+\[y_{n} = T_{n} \omega_{n} \\
+z_{n} = \frac{y_{n}} {y_{n-1}} = \frac{T_{n} \omega_{n}} {T_{n-1} \omega_{n-1}} 
+= (1+\alpha) \frac {\omega_{n}} {\omega_{n-1}} \\
+\]
+
+<ul>
+<li>成長率を検出できる
+\[
+s_{n} = s_{n-p} \\
+x_{n} = \frac {y_{n}} {y_{n-p}} = \frac {s_{n} \omega_{n}} {s_{n-p} \omega_{n-p}}
+= \frac {\omega_{n}} {\omega_{n-p}}
+\]</li>
+<li>周期分布を除去できる</li>
+</ul></li>
+<li>移動平均
+
+<ul>
+<li>変動の多い時系列をフィルターする方法</li>
+<li>medianとaverageでフィルターする</li>
+</ul></li>
+</ul>
+
+</body>
+
+</html>

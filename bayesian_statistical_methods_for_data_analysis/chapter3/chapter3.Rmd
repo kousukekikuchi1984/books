@@ -1,0 +1,33 @@
+---
+title: "chapter3"
+author: "Kousuke Kikuchi"
+date: "September 30, 2015"
+output: html_document
+---
+
+
+Box-Cox変換を使った線形回帰分析
+```{r}
+# data preparation
+data1 <- read.table("../r3/dataset/INE.txt", header=T) # data1[,1] 生産量, data1[,2] 作付け面積
+data2 <- read.table("../r3/dataset/KION.txt", header=T) # 気温
+
+y <- data1[,1] / data1[,2]
+N <- nrow(data1) # nrowはrowの数を返す
+x <- matrix(1, N, 12) # 12ヶ月分
+for (i in 1:N) {
+  for (j in 1:10)  { x[i,j] <- data2[i+1, j] }
+  for (j in 11:12) { x[i,j] <- data2[i, j]}   
+}
+summary(x)
+summary(y)
+
+# box-cox regression
+library(car)
+yp <- powerTransform(y)
+yc <- bcPower(y, yp$roundlam)
+func <- lm(yc ~ x)
+
+summary(func)
+AIC(func)
+```

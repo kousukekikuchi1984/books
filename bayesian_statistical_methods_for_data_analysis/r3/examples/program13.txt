@@ -1,0 +1,96 @@
+  #===== Program 13（中立的学習効果の推定）====================================
+  # データファイルが C ドライブのフォルダ RW にあるとき
+  setwd("C:/RW")
+  data <- read.table("PDA-F.txt", header=T)
+  N <- nrow(data)
+  lambda <- 0.48; gamma <- -0.23; T <- 29
+  # 予備設定
+  DATA <- function(lambda, data, N) 
+    {
+     MT <- data[,1]; IS <- log2(data[,2]/data[,3] + lambda + 1)
+     IH <- log2(14/(data[,5] + 1)); tn <- data[,4]
+     return(list(MT=MT, IS=IS, IH=IH, tn=tn)) 
+    }
+  # 行列 D と Q の設定 --------------------------------------------------------
+  DQset <- function(T) 
+    {
+     D <- matrix(0,T+1,T); Q <- matrix(0,T+1,2)
+     for (i in 1:(T-2))
+       {
+        D[i,i] <- 1; D[i,i+1] <- -2; D[i,i+2] <- 1
+       }
+     D[T-1,T-1] <- 1; D[T-1,T] <- -2; D[T,T] <- 1
+     D[T+1,] <- numeric(T) + 1e3
+     Q[T-1,2] <- 1; Q[T,1] <- -2; Q[T,2] <- 1
+     return(list(D=D, Q=Q))
+    }
+  # 尤度モデルにかかわる行列 W と G の設定 --------------------------------------
+  MODset <- function(data, lambda, gamma, N, T) 
+    {
+     DAT <- DATA(lambda, data, N)
+     MT <- DAT$MT; IS <- DAT$IS; IH <- DAT$IH; tn <- DAT$tn
+     n <- N + T + 1; W <- matrix(0,n,T); G <- matrix(0,n,5); y <- numeric(n)
+     if (gamma == 0)  
+       {
+        y[1:N] <- log(MT); G[1:N,4] <- log(IS); G[1:N,5] <- log(IH)
+       }
+     else 
+       {
+        y[1:N] <- (MT^gamma - 1) / gamma
+        G[1:N,4] <- (IS^gamma - 1) / gamma
+        G[1:N,5] <- (IH^gamma - 1) / gamma
+       }
+     for (i in 1:N)
+       {
+        j <- tn[i] - 1; W[i,j] <- 1
+       }
+     G[1:N,3] <- numeric(N) + 1
+     return(list(y=y, W=W, G=G, MT=MT))
+    }
+  # 個別対数尤度関数 ----------------------------------------------------------
+  LogL1 <- function(y, MT, W, G, gamma, d, D, Q, N, T) 
+    {
+     DD <- d*D; W[(N+1):(N+T+1),] <- DD
+     G[(N+1):(N+T+1),1:2] <- d*Q
+     V <- cbind(W,G); B <- t(V) %*% V
+     c <- t(V) %*% y; beta <- solve(B, c)
+     e <- y - V %*% beta; SIG2 <- crossprod(e,e)/N
+     SVD1 <- svd(W); Wd <- SVD1$d; SVD2 <- svd(DD)
+     DDd <- SVD2$d; LDTM1 <- (gamma - 1)*sum(log(MT))
+     LDTM2 <- sum(log(Wd^2)); LDTM3 <- sum(log(DDd^2))
+     LL <- LDTM1 - N*(log(2 * pi * SIG2) + 1 )/2 - LDTM2/2 + LDTM3/2
+     return(list(LL=LL, beta=beta, SIG2=SIG2)) 
+    }
+  # d の部分対数尤度関数 ------------------------------------------------------
+  LogL2 <- function(theta, y, MT, W, G, gamma, D, Q, N, T) 
+    {
+     d <- theta
+     LLF <- LogL1(y, MT, W, G, gamma, d, D, Q, N, T)
+     LL <- LLF$LL
+     return(LL)
+    }
+  # メインルーチン ------------------------------------------------------------
+  MATDQ <- DQset(T); D <- MATDQ$D; Q <- MATDQ$Q
+  MATWG <- MODset(data, lambda, gamma, N, T)
+  y <- MATWG$y; W <- MATWG$W; G <- MATWG$G; MT <- MATWG$MT
+  # d に関する最適化 ----------------------------------------------------------
+  LLF1 <- optimize(LogL2, lower=1e1, upper=1e3, maximum=TRUE, y=y, 
+                   MT=MT, W=W, G=G, gamma=gamma, D=D, Q=Q, N=N, T=T)
+  LL1 <- LLF1$objective; d1 <- LLF1$maximum
+  AIC1 <- -2*LL1 + 2*7
+  LLF2 <- LogL1(y, MT, W, G, gamma, d1, D, Q, N, T)
+  SIG12 <- LLF2$SIG2; TAU12 <- SIG12/d1^2; beta <- LLF2$beta
+  a1 <- beta[1:T]; a01 <- beta[T+3]; b01 <- beta[T+4]; c01 <- beta[T+5]
+  print(LL1)
+  print(AIC1)
+  print(d1)
+  print(SIG12)
+  print(TAU12)
+  print(a01)
+  print(b01)
+  print(c01)
+  # 時変効率パラメータの折れ線グラフ ------------------------------------------
+  t <- c(1:T)
+  plot(t, a1, xlim=range(t), ylim=c(-0.01,0.02), type="l", 
+       xlab="repeated times", ylab="a(t)", lwd=2)
+ #=======================================================================

@@ -1,0 +1,50 @@
+---
+title: "probability distribution and likelihood estimation of statistical model"
+author: "kousuke kikuchi"
+date: "June 25, 2015"
+output: html_document
+---
+
+# 2. 確率分布と統計モデルの最尤推定
+- 確率分布を使って、統計モデルのばらつきを表現する
+
+### 2.1 種子数の統計モデリング
+```{r img.width=10, img.height=5}
+load("kubobook2012/chapter02/data.RData")
+data
+length(data)
+summary(data)
+table(data) # 度数分布
+hist(data, breaks=seq(-0.5, 9.5, 1))
+var(data) # 標本分散
+sd(data) # 標準偏差
+```
+
+### 2.2 データと確率分布の対応関係をながめる
+```{r img.width=10, img.height=5}
+y <- 0:9 # y = [ i in i for range(9)]
+prob <- dpois(y, lambda = 3.56) # ポアソン分布
+plot(y, prob, type="b", lty=2) # b: 点線, lty: linetypeをダッシュにする
+```
+- なんとなくポアソン分布に従いそうだという実感を持つことが重要
+- 具体的に定量的に示す方法は次
+
+### 2.3 ポアソン分布とはなにか
+- 平均値 = 分散 = λ
+- このdataに対してポアソン分布の選択基準
+    - データに含まれている値が自然数である
+    - データに含まれている値の下限はあるが、上限がない
+    - 観測データの平均値と分散がだいたい同じ
+
+### 2.4 ポアソン分布のパラメータの最尤推定法
+- 要するにもっとも当てはまりが良いパラメータをテーラー展開のように推定しようという話
+- 本当はAICがあるんだけど。
+``` {r img.width=10, img.height=5}
+logL <- function(m) sum(dpois(data, m, log=TRUE))
+lambda <- seq(2, 5, 0.1)
+plot(lambda, sapply(lambda, logL), type="l")
+```
+
+### 2.5 統計モデルの要点：乱数発生、推定、予測
+- 要するに、標本を集めたら、ある乱数発生器を試してみて、どういう分布に従うのかを試そう
+- そこから、fitting、predictionにつながる

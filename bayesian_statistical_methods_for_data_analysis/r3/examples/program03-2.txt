@@ -1,0 +1,93 @@
+  #=== Program 3.2（Box-Cox変換を用いたベイズ型線形モデルの推定）====
+  # データファイルが C ドライブのフォルダ RW にあるとき
+  setwd("C:/RW")
+  # 北海道稲作データの入力
+  Data1 <- read.table("INE.txt", header=T)
+  # 札幌気温データの入力
+  Data2 <- read.table("KION.txt", header=T)
+  # データ数を求める
+  N <- nrow(Data1)
+  M1 <- 12; M2 <- 1; K <- 2
+  # 関連行列の設定 --------------------------------------------------
+  y <- Data1[,1]/Data1[,2]
+  X1 <- matrix(0,N,M1)
+  for (i in 1:N)
+    {
+     for (j in 1:10)   {X1[i,j] <- Data2[i+1,j]}
+     for (j in 11:12)  {X1[i,j] <- Data2[i,j]}
+    }
+  X2 <- matrix(1,N,1); D <- diag(M1); H <- matrix(0,M1,K)
+  for (i in 4:8)  {H[i,1] <- 1}
+  for (i in 1:3)  {H[i,2] <- 1}
+  for (i in 9:M1) {H[i,2] <- 1}
+  O1 <- matrix(0,N,K); O2 <- matrix(0,M1,M2)
+  o <- numeric(M1); A1 <- cbind(X1, X2, O1)
+  # Box-Cox変換における lambda の条件付き対数尤度関数 ---------------
+  LogL1 <- function(theta, d, y, X1, A1, O2, D, H, o, N, M1) 
+    {
+     lambda <- theta; A2 <- cbind(d*D, O2, -d*H)
+     V <- rbind(A1, A2); W <- rbind(X1, d*D)
+     {if (lambda == 0)
+        {ty <- c(log(y),o)
+        }
+      else
+        {ty <- c((y^lambda - 1) / lambda,o)
+        }
+     }
+     B <- t(V) %*% V; c <- t(V) %*% ty
+     phi <- solve(B, c)  # 正規方程式を解く
+     e <- ty - V %*% phi; SIG2 <- crossprod(e,e) / N
+     LL <- -N * (log(2 * pi * SIG2) + 1 )/2 + M1*log(d) 
+     LL <- LL - log(det(t(W) %*% W))/2 + (lambda - 1) * sum(log(y))
+     return(LL) 
+    }
+    
+  # d の部分対数尤度関数 --------------------------------------------
+  LogL2 <- function(theta, y, X1, A1, O2, D, H, o, N, M1) 
+    {
+     d <- theta
+     # lambda に関する関数 LogL の最大化
+     LLF <- optimize(LogL1, lower=-1, upper=1, maximum=TRUE, d=d, y=y, 
+                     X1=X1, A1=A1, O2=O2, D=D, H=H, o=o, N=N, M1=M1)
+     LL <- LLF$objective
+     return(LL) 
+    }
+  # d に関する関数 LogL2 の最大化 -----------------------------------
+  LLF1 <- optimize(LogL2, lower=1e5, upper=1e7, maximum=TRUE, y=y, 
+                  X1=X1, A1=A1, O2=O2, D=D, H=H, o=o, N=N, M1=M1)
+  d <- LLF1$maximum
+  LL <- LLF1$objective
+  
+  # lambda に関する関数 LogL の最大化 -------------------------------
+  LLF2 <- optimize(LogL1, lower=-1, upper=1, maximum=TRUE, d=d, y=y, 
+                  X1=X1, A1=A1, O2=O2, D=D, H=H, o=o, N=N, M1=M1)
+  lambda <- LLF2$maximum
+  
+  A2 <- cbind(d*D, O2, -d*H)
+  V <- rbind(A1, A2)
+  {if (lambda == 0)
+     {ty <- c(log(y),o)
+     }
+   else
+     {ty <- c((y^lambda - 1) / lambda,o)
+     }
+  }
+  B <- t(V) %*% V; c <- t(V) %*% ty
+  phi <- solve(B, c)   # 正規方程式を解く
+  e <- ty - V %*% phi; SIG2 <- crossprod(e,e) / N
+  # 原データと変換後のデータに関するモデルのAICの計算 ---------------
+  AIC <- -2*LL + 2*(M2+K+3)
+  # 主要結果の出力 --------------------------------------------------
+  print("Lambda ="); print(lambda)
+  print("d ="); print(d)
+  print("Phi ="); print(phi)
+  print("Sigma2 ="); print(SIG2)
+  print("Max-Likelihood ="); print(LL)
+  print("AIC ="); print(AIC)
+  # 気温効果の折れ線グラフ ------------------------------------------
+  b <- numeric(12)
+  for (i in 1:12)
+    {b[i] <- phi[i]}
+  matplot(b, type="l", xlab="time (month)", 
+          ylab="effects of temperature")
+  #==================================================================

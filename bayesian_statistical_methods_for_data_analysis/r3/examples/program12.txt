@@ -1,0 +1,121 @@
+  #=====Program 12（CES生産関数の推定） =============================
+  # 14:16 2010/03/24
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  data <- read.table("CES-JP.txt")  # 日本のデータ
+  # データ数 N を求める
+  N <- nrow(data); Q <- data[,1]
+  XK <- data[,2] + data[,3]; XL <- data[,4]
+  M <- 200  # BMA 法を実施するときの個別モデル数
+  # 定数行列の設定 --------------------------------------------------
+  MATset <- function(N) 
+    {
+     D <- diag(N)
+     for (i in 3:N)
+       {
+        D[i,i-1] <- -2; D[i,i-2] <- 1
+       }
+     D[2,1] <- -2; D[3,1] <- 1; D[3,2] <- -2
+     B <- matrix(0,N,2); B[1,1] <- 1; B[1,2] <- -2; B[2,2] <- 1
+     return(list(D=D, B=B))
+    }
+  # dの部分対数尤度関数 ---------------------------------------------
+  EST <- function(Q, XK, XL, ro, nu, d, D, B, N, M) 
+    {
+     SLL <- numeric(M); Sdelta <- numeric(M)
+     Sgamma <- matrix(0,M,N); Egamma <- numeric(N)
+     ddelta <- 1/(M+1)
+     for (II in 1:M)
+       {
+        delta <- ddelta*II; Sdelta[II] <- delta
+        LLF <- LogL1(Q, XK, XL, delta, ro, nu, d, D, B, N)
+        SLL[II] <- LLF$LL; Sgamma[II,] <- LLF$gamma
+       }
+     MLL <- max(SLL); SP <- exp(SLL - MLL)
+     ML <- sum(exp(SLL - MLL))
+     P <- SP/ML; Edelta <- crossprod(P,Sdelta)
+     for (II in 1:N)
+       {
+        gamma <- Sgamma[,II]^(-nu/ro)
+        Egamma[II] <- crossprod(P,gamma)
+       }
+     LL <- log(ML/M) + MLL
+     return(list(LL=LL, Edelta=Edelta, Egamma=Egamma))
+    }
+  # 別対数尤度関数 ------------------------------------------------
+  LogL1 <- function(Q, XK, XL, delta, ro, nu, d, D, B, N) 
+    {
+     W <- matrix(0,2*N,N); A <- matrix(0,2*N,2); z <- numeric(2*N)
+     X <- diag(nu*(delta*XK^(-ro) + (1-delta)*XL^(-ro))/ro)
+     y <- -(nu/ro)*Q^(-ro/nu); W[1:N,1:N] <- -X
+     W[(N+1):(2*N),1:N] <- d*D; z[1:N] <- y
+     A[(N+1):(2*N),1:2] <- d*B; V <- cbind(W,A)
+     B <- t(V) %*% V; c <- t(V) %*% z
+     beta <- solve(B, c); e <- z - V %*% beta
+     SIG2 <- crossprod(e,e)/N; SVD <- svd(W); Wd <- SVD$d
+     LDTM1 <- -(ro/nu + 1)*sum(log(Q)); LDTM2 <- sum(log(Wd^2))
+     LL <- LDTM1 - N*(log(2 * pi * SIG2) + 1 )/2 + N*log(d) - LDTM2/2
+     gamma <- beta[1:N]
+     return(list(LL=LL, gamma=gamma)) 
+    }
+  # dの部分対数尤度関数 ---------------------------------------------
+  LogL2 <- function(theta, Q, XK, XL, ro, nu, D, B, N, M) 
+    {
+     d <- theta; SLL <- numeric(M); ddelta <- 1/(M+1)
+     for (II in 1:M)
+       {
+        delta <- ddelta*II
+        LLF <- LogL1(Q, XK, XL, delta, ro, nu, d, D, B, N)
+        SLL[II] <- LLF$LL
+       }
+     MLL <- max(SLL); ML <- sum(exp(SLL - MLL))/M
+     LL <- log(ML) + MLL
+     return(LL)
+    }
+  # nuの部分対数尤度関数 --------------------------------------------
+  LogL3 <- function(theta, Q, XK, XL, ro, D, B, N, M) 
+    {
+     nu <- theta
+     # dに関する最適化
+     LLF <- optimize(LogL2, lower=10, upper=300, maximum=TRUE, Q=Q, 
+                     XK=XK, XL=XL, ro=ro, nu=nu, D=D, B=B, N=N, M=M)
+     LL <- LLF$objective
+     return(LL)
+    }
+  # roの部分対数尤度関数 --------------------------------------------
+  LogL4 <- function(theta, Q, XK, XL, D, B, N, M) 
+    {
+     ro <- theta
+     # nuに関する最適化
+     LLF <- optimize(LogL3, lower=0.2, upper=1.2, maximum=TRUE, 
+                     Q=Q, XK=XK, XL=XL, ro=ro, D=D, B=B, N=N, M=M)
+     LL <- LLF$objective
+     return(LL)
+    }
+  MATDB <- MATset(N)
+  D <- MATDB$D; B <- MATDB$B
+  # roに関する最適化 ------------------------------------------------
+  LLF1 <- optimize(LogL4, lower=-0.95, upper=-0.1, maximum=TRUE, 
+                  Q=Q, XK=XK, XL=XL, D=D, B=B, N=N, M=M)
+  LL <- LLF1$objective; ro <- LLF1$maximum
+  # nuに関する最適化 ------------------------------------------------
+  LLF2 <- optimize(LogL3, lower=0.2, upper=1.2, maximum=TRUE, 
+                   Q=Q, XK=XK, XL=XL, ro=ro, D=D, B=B, N=N, M=M)
+  nu <- LLF2$maximum
+  # dに関する最適化 -------------------------------------------------
+  LLF3 <- optimize(LogL2, lower=10, upper=300, maximum=TRUE, Q=Q, 
+                  XK=XK, XL=XL, ro=ro, nu=nu, D=D, B=B, N=N, M=M)
+  d <- LLF3$maximum
+  RES <- EST(Q, XK, XL, ro, nu, d, D, B, N, M)
+  z <- RES$Egamma; delta <- RES$Edelta
+  # 主要結果の出力 --------------------------------------------------
+  print("d ="); print(d)
+  print("ro ="); print(ro)
+  print("nu ="); print(nu)
+  print("delta ="); print(delta)
+  print("Max-Likelihood ="); print(LL)
+  # 時変効率パラメータの折れ線グラフ --------------------------------
+  t <- c(1:N)
+  plot(t, z, xlim=range(t), ylim=range(z), type="l", 
+       xlab="time", ylab="efficiency parameter", lwd=2)
+ #===================================================================

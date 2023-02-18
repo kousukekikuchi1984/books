@@ -1,0 +1,95 @@
+  #=== Program 7.2（カルマンフィルタのプログラム：例7.2を対象に）====
+  # 3次ARモデルの推定
+  # データファイルが C ドライブのフォルダ RW にあるとする
+  setwd("C:/RW")
+  # データの入力
+  data <- read.table("times2.txt")
+  # データ数 N を求め，データを y に渡す
+  N <- nrow(data)
+  y <- data[,1]
+  # カルマンフィルタの関数 ------------------------------------------
+  KF <- function(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, m, N)  
+    {
+     if (OSW == 1)
+       {
+        XPS <- matrix(0, m, N); XFS <- matrix(0, m, N)
+        VPS <- array(dim = c(m, m, N)); VFS <- array(dim = c(m, m, N))
+       }
+     XF <- XF0; VF <- VF0; NSUM <- 0; SIG2 <- 0; LDET <- 0
+     for (n in 1:N)
+       {
+        # 1期先予測
+        XP <- F %*% XF
+        VP <- F %*% VF %*% t(F) +  G %*% Q %*% t(G)
+        # フィルタ
+        if (y[n] < limy) 
+          {
+           NSUM <- NSUM + 1
+           B <- H %*% VP %*% t(H) + R
+           B1 <- solve(B)
+           K <- VP %*% t(H) %*% B1
+           e <- y[n] - H %*% XP
+           XF <- XP + K %*% e
+           VF <- VP - K %*% H %*% VP
+           SIG2 <- SIG2 + t(e) %*% B1 %*% e
+           LDET <- LDET + log(det(B))
+          }
+        else
+          {
+           XF <- XP; VF <- VP
+          }
+        if (OSW == 1)
+          {
+           XPS[,n] <- XP; XFS[,n] <- XF; VPS[,,n] <- VP; VFS[,,n] <- VF
+          }   
+       }
+     SIG2 <- SIG2 / NSUM
+     if (ISW == 0)
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi * SIG2) + 1) + LDET)
+       }
+     else
+       {
+        FF <- -0.5 * (NSUM * (log(2 * pi) + SIG2) + LDET)
+       }
+     if (OSW == 0)
+       {
+        return(list(LLF=FF, Ovar=SIG2))
+       }
+     if (OSW == 1)
+       {
+        return(list(XPS=XPS, XFS=XFS, VPS=VPS, VFS=VFS, LLF=FF, Ovar=SIG2))
+       }
+    }
+  # AR係数の対数尤度関数の定義 --------------------------------------
+  LogL <- function(theta, y, F, H, G, Q, R, limy, ISW, k, N)  
+    {
+     F[1,1] <- theta[1]; F[1,2] <- theta[2]; F[1,3] <- theta[3]
+     XF0 <- numeric(k); VF0 <- 10 * diag(k); OSW <- 0
+     LLF <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, k, N)
+     LL <- - LLF$LLF
+     return(LL)
+    }
+  # カルマンフィルタのための行列およびパラメータの設定 --------------
+  limy <- 1e20; ISW <- 0; k <- 3; m <- 1
+  F <- matrix(0, k, k); G <- matrix(0, k, m)
+  H <- matrix(0, 1, k); Q <- diag(m); R <- 0*diag(1)
+  F[2,1] <- 1; F[3,2] <- 1; G[1,1] <- 1; H[1,1] <- 1
+  # AR係数の最尤推定を求める数値計算 --------------------------------
+  LLF1 <- optim(c(0.0, 0.0, 0.0), LogL, y=y, F=F, H=H, G=G, Q=Q, 
+                R=R, limy=limy, ISW=ISW, k=k, N=N, method="BFGS")
+  alpha1 <- LLF1$par[1]; alpha2 <- LLF1$par[2]
+  alpha3 <- LLF1$par[3]; MLL <- -LLF1$value
+  # SIG2 の推定値の計算----------------------------------------------
+  F[1,1] <- alpha1; F[1,2] <- alpha2; F[1,3] <- alpha3; OSW <- 0
+  LLF2 <- KF(y, XF0, VF0, F, H, G, Q, R, limy, ISW, OSW, k, N)
+  SIG2 <- LLF2$Ovar
+  # AICの計算と主要な結果の出力--------------------------------------
+  AIC <- -2 * MLL + 2 * 4
+  print(alpha1)
+  print(alpha2)
+  print(alpha3)
+  print(SIG2)
+  print(MLL)
+  print(AIC)
+ #===================================================================

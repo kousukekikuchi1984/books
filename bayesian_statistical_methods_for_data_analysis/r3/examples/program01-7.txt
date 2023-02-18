@@ -1,0 +1,10 @@
+  #===== Program 1.7（散布図の図示）=======================
+  # 作業ディレクトリが C ドライブのフォルダ RW であるとき
+  setwd("C:/RW")
+  # データを Data に呼び込む
+  Data <- read.table("INE.txt", header=T)
+  # データ数 N を求め, 各列のデータを y, x に渡す
+  N <- nrow(Data); y <- Data[,1]; x <- Data[,2]
+  # 散布図を描く
+  plot(x, y, type="p", xlab="acreage", ylab="production")
+  #========================================================

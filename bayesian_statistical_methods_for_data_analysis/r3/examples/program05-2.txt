@@ -1,0 +1,64 @@
+  #===== Program 5.2（線形回帰モデル推定のギブス・サンプラー）=======
+  # データの読み込み
+  setwd("C:/RW")
+  data <- read.table("times1.txt")
+  N <- nrow(data); y <- data[,1]; M <- 1000
+  # 説明変数行列 X の設定
+  k <- 3; X <- matrix(1,N,k)
+  t <- c(1:N); X[,2] <- t; X[,3] <- t^2
+  # 中間結果保存スペースの設定---------------------------------------
+  beta <- matrix(0,k,M); sig2 <- numeric(M)
+  b <- numeric(k); b2 <- numeric(k-1); mb2 <- numeric(k-1)
+  X1 <- numeric(N); X2 <- matrix(0, N, k-1)
+  # 回帰係数の最小2乗推定値の計算-----------------------------------
+  SUB0 <- function(y, X) 
+    {
+     B <- t(X) %*% X; c <- t(X) %*% y; beta <- solve(B, c)
+     return(beta) 
+    }
+  # 誤差分散の乱数生成-----------------------------------------------
+  SUB1 <- function(e, N, k) 
+    {
+     s <- sum(e^2); s1 <- (N - k) / 2; s2 <- 2 / s
+     r <- rgamma(1, shape=s1, scale=s2); a <- 1 / sqrt(r)
+     return(a) 
+    }
+  # 回帰係数の乱数生成-----------------------------------------------
+  SUB2 <- function(mb1, mb2, b2, X1, X2, SIG) 
+    {
+     Q <- t(X2) %*% X2; q <- sum(X1^2); Q1 <- solve(Q)
+     c11 <- q - t(X1) %*% X2 %*% Q1 %*% t(X2) %*% X1
+     c12 <- - t(X1) %*% X2 %*% Q1
+     c22 <- Q - t(X2) %*% X1 %*% t(X1) %*% X2 / q
+     c1 <- 1/c11 - c12 %*% c22 %*% t(c12) / c11^2
+     s <- SIG * sqrt(c1); r <- rnorm(1, mean=0, sd=s)
+     b1 <- mb1 + c12 %*% c22 %*% (b2 - mb2) / c11
+     a <- b1 + r
+     return(a) 
+    }
+  # メインルーチン---------------------------------------------------
+  mb0 <- SUB0(y=y, X=X)
+  e <- y - X %*% mb0; SIG <- sqrt(sum(e^2)/N)
+  msig2 <- SIG^2; beta[,1] <- b; sig2[1] <- SIG^2 
+  for (n in 2:M)
+    {
+     for (i in 1:k)
+       {
+        X1 <- X[,i]; mb1 <- mb0[i]; No <- 0
+        for (L in 1:k)
+          {
+           if (L != i)
+             {
+              No <- No + 1; X2[,No] <- X[,L]
+              b2[No] <- b[L]; mb2[No] <- mb0[L]
+             }
+          }
+          b[i] <- SUB2(mb1=mb1, mb2=mb2, b2=b2, X1=X1, X2=X2, SIG=SIG)
+       }
+     beta[,n] <- b
+     SIG <- SUB1(e=e, N=N, k=k)
+     sig2[n] <- SIG^2
+    }
+  # 推定値の出力 ----------------------------------------------------
+  # （省略）
+  # ============================================================
