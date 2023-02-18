@@ -1,5 +1,4 @@
-mod exercises;
-mod practices;
+mod solutions;
 
 fn main() {
     println!("Hello, world!");
